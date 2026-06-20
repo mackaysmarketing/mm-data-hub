@@ -57,6 +57,10 @@ additive-only / never-repurpose rule (SPEC §2).
   schedule is a later sprint.
 
 ## Known issues / debt
+- **Push blocked (permissions)** — committed locally on `main`; `origin` set to
+  `github.com/mackaysmarketing/mm-data-hub`. `git push` returns 403: the authed account
+  `timbowilcox` has read (`pull`) but not `push` on this org repo. Grant `timbowilcox` write
+  access (or push from an account that has it), then `git push -u origin main`.
 - **46 loads have no pallets** (0.8%) — empty/cancelled loads or pallets packed before the pallet
   window start (2025-05-01). Surfaced in reconciliation; not a loader fault.
 - **6 loads with a non-zero box delta** — `stock_boxes` carries a round planned/ordered quantity
