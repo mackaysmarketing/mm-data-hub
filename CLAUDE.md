@@ -21,18 +21,22 @@ The `data_hub` Supabase project is **shared**. Ownership is split by schema:
 
 ## Cross-repo RLS claim contract (with mm-hub)
 mm-hub authenticates growers (email auth) and issues a JWT. The hub's grower-scoped objects
-filter on a single claim:
+filter on claims under **`app_metadata`** — the server-controlled JWT namespace a grower
+cannot self-set (Supabase only lets users edit `user_metadata`):
 
 ```
-grower auth (mm-hub)  →  JWT claim  request.jwt.claims.consignor_id  (uuid)
+grower auth (mm-hub)  →  JWT claim  request.jwt.claims.app_metadata.consignor_id  (uuid)
+internal staff/service →  JWT claim  request.jwt.claims.app_metadata.is_internal = true
 ```
 
 - **`consignor_id` is the grower identity key** across dispatch and (phase 2) settlement.
   `supplier_id` is null on GP records; `consignor` == grower everywhere.
-- `semantic.current_consignor_id()` reads that claim. RLS on `raw.ft_dispatch_load`,
+- `semantic.current_consignor_id()` / `is_internal_claim()` read ONLY from `app_metadata`
+  (never top-level) and fail closed on a malformed value. RLS on `raw.ft_dispatch_load`,
   `raw.ft_pallet`, and `core.dim_grower` scopes every grower query to their own rows.
-- An internal claim `request.jwt.claims.is_internal = true` (hub staff / service) sees all.
-  `service_role` bypasses RLS for ingestion + Cube/Steep reads.
+- mm-hub MUST set `consignor_id` / `is_internal` inside `app_metadata` (via the admin API or a
+  Custom Access Token Hook) — NEVER as a top-level or `user_metadata` claim, or a grower could
+  forge it. `service_role` bypasses RLS for ingestion + Cube/Steep reads.
 - mm-hub must NOT re-implement this filter client-side. The hub enforces it; mm-hub only
   presents the claim.
 

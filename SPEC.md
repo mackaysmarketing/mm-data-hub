@@ -42,7 +42,7 @@ All landed tables carry `id uuid` PK, `_synced_at`, and (small tables only) `_ra
 ### Dispatch domain (`raw.ft_*`, GraphQL source)
 
 **dispatch_load** (grain: one load)
-`id, load_no, order_type (Buy/Sell), state_id, scheduled_pickup_on, actual_pickup_on, scheduled_delivery_on, actual_delivery_on, pack_date, asn_sent_on, latest_order_modified_on, consignor_id, consignee_id, marketer_id, carrier_id, shed_id, market_area_id, order_id, order_no, po_no, latest_order_version_no, stock_boxes, reconsigned_boxes, is_complete, is_locked, attached_document_count, manifest_no, certificate_no, pallet_transfer_no, dc_slot_ref, temperature_profile_id, temperature_value, comment, extra_text_2`
+`id, load_no, order_type (source codes 'S'=Sell / 'B'=Buy), state_id, scheduled_pickup_on, actual_pickup_on, scheduled_delivery_on, actual_delivery_on, pack_date, asn_sent_on, latest_order_modified_on, consignor_id, consignee_id, marketer_id, carrier_id, shed_id, market_area_id, order_id, order_no, po_no, latest_order_version_no, stock_boxes, reconsigned_boxes, is_complete, is_locked, attached_document_count, manifest_no, certificate_no, pallet_transfer_no, dc_slot_ref, temperature_profile_id, temperature_value, comment, extra_text_2`
 *`dispatched_at = actual_pickup_on`. `extra_text_2` is 100% populated with ~9 distinct values — confirm what it codes before naming the column.*
 
 **pallet** (grain: one pallet)

@@ -10,6 +10,7 @@
   "scripts": {
     "typecheck": "tsc --noEmit",
     "test": "node --experimental-strip-types --test tests/*.test.ts",
+    "test:integration": "node --experimental-strip-types --test tests/integration/*.test.ts",
     "load:entities": "node --experimental-strip-types src/loaders/entities.ts",
     "load:dispatch": "node --experimental-strip-types src/loaders/dispatch.ts",
     "load:pallets": "node --experimental-strip-types src/loaders/pallets.ts",

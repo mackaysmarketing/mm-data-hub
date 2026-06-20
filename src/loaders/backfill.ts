@@ -43,6 +43,9 @@ export async function runBackfill(): Promise<void> {
         }
         await beginWindow(client, 'pallet', w.start, w.end);
         const p = await loadPalletsForLoadIds(client, d.loadIds);
+        if (p.truncatedLoadIds.length > 0) {
+          log(`  ⚠ ${p.truncatedLoadIds.length} load(s) hit the pallet filterLimit — raise FRESHTRACK_FILTER_LIMIT: ${p.truncatedLoadIds.join(', ')}`);
+        }
         await completeWindow(client, 'pallet', w.start, { seen: p.seen, upserted: p.upserted });
         await completeWindow(client, 'dispatch_load', w.start, {
           seen: d.seen,
