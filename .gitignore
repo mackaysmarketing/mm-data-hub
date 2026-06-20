@@ -1,0 +1,25 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+
+# Env / secrets — never commit
+.env
+.env.local
+*.local
+
+# Logs & generated reports (ignore run output, but keep committed reconciliation evidence)
+reports/*.md
+!reports/.gitkeep
+!reports/reconciliation_*.md
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Supabase CLI local artifacts
+supabase/.branches/
+supabase/.temp/

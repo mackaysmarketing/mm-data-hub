@@ -1,0 +1,30 @@
+{
+  "name": "mm-data-hub",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Mackays Data Hub — FreshTrack ingestion into the Supabase hub (raw → core → semantic). Owns the raw/core/semantic schemas only.",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "node --experimental-strip-types --test tests/*.test.ts",
+    "load:entities": "node --experimental-strip-types src/loaders/entities.ts",
+    "load:dispatch": "node --experimental-strip-types src/loaders/dispatch.ts",
+    "load:pallets": "node --experimental-strip-types src/loaders/pallets.ts",
+    "backfill": "node --experimental-strip-types src/loaders/backfill.ts",
+    "reconcile": "node --experimental-strip-types src/reconcile.ts",
+    "schema:diff": "node --experimental-strip-types src/schemaDiff.ts",
+    "schema:snapshot": "node --experimental-strip-types src/schemaDiff.ts --init"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.7",
+    "pg": "^8.13.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.5",
+    "@types/pg": "^8.11.10",
+    "typescript": "^5.7.3"
+  }
+}
