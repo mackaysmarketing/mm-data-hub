@@ -1,0 +1,52 @@
+views:
+  - name: dispatch
+    title: Dispatch
+    description: >-
+      Governed dispatch metric surface — the SINGLE code-defined definition consumed by
+      Steep and (later) the Hub MCP. The base cubes are private; everything flows through
+      this view so the baked-in filters and RLS cannot be bypassed.
+
+      Baked-in filters every consumer inherits: order_type = 'S' (Sell only),
+      actual_pickup_on IS NOT NULL (dispatched), non-test consignor.
+
+      RLS: every query is row-filtered to the caller's consignor via the security context
+      (app_metadata.consignor_id) in cube.js queryRewrite. Internal context (is_internal)
+      is unscoped. No dimension selection can widen a grower's scope.
+
+      Grain safety: nothing is sliceable below pallet / line grain. location_id and
+      harvest-load lineage are not modelled (harvest_load_id is null outbound).
+
+      Contract discipline: metrics are ADD-ONLY. Add a new measure freely; never redefine
+      the meaning, grain, or baked-in filter set of an existing one.
+
+      Rooted on dispatch_loads so load_count is true load grain; pallet measures aggregate
+      over the one-to-many join to dispatch_pallets.
+    public: true
+
+    cubes:
+      # ── Load-grain measure + load-level dimensions (incl. the RLS anchor) ────
+      - join_path: dispatch_loads
+        includes:
+          - load_count
+          - grower_key
+          - consignee_key
+          - dispatched_on
+          - pack_week
+
+      # ── Pallet-grain measures + pallet-level dimensions ──────────────────────
+      - join_path: dispatch_loads.dispatch_pallets
+        includes:
+          - pallet_count
+          - net_weight_dispatched
+          - line_count
+          - pallets_with_net_weight
+          - net_weight_capture_rate
+          - crop
+          - variety
+          - product
+
+      # ── Readable grower attributes (visible to the internal/unscoped context) ─
+      - join_path: dispatch_loads.dim_grower
+        includes:
+          - grower_code
+          - grower_name

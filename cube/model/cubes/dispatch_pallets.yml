@@ -1,0 +1,128 @@
+cubes:
+  - name: dispatch_pallets
+    title: Dispatch Pallets
+    description: >-
+      Dispatch pallets (grain: one pallet). Source: raw.ft_pallet joined to its load and
+      to core.dim_grower. The SAME baked-in filters as dispatch_loads are enforced in THIS
+      cube's SQL (Sell, dispatched, non-test) so pallet measures can NEVER include
+      Buy / undispatched / test-consignor rows, regardless of how a consumer queries.
+      net_weight_value is nullable and produce-dependent — summed/averaged with nulls
+      EXCLUDED, never coalesced to 0 (SPEC §9.8). location_id and harvest lineage not modelled.
+    public: false
+
+    sql: >
+      SELECT
+        p.id,
+        p.dispatch_load_id,
+        d.consignor_id::text  AS grower_key,
+        d.consignee_id::text  AS consignee_key,
+        d.actual_pickup_on,
+        d.extra_text_2        AS pack_week_raw,
+        p.product_id::text    AS product_id,
+        p.crop_description,
+        p.variety_description,
+        p.product_description,
+        p.box_count,
+        p.net_weight_value,
+        p.net_weight_unit
+      FROM raw.ft_pallet p
+      JOIN raw.ft_dispatch_load d ON d.id = p.dispatch_load_id
+      JOIN core.dim_grower g ON g.consignor_id = d.consignor_id
+      WHERE d.order_type = 'S'
+        AND d.actual_pickup_on IS NOT NULL
+        AND COALESCE(g.is_test, false) = false
+
+    measures:
+      - name: pallet_count
+        title: Pallet Count
+        description: >-
+          CONTRACT — count of dispatched Sell pallets (pallet grain). Filters baked in:
+          Sell, dispatched, non-test. Allowed dims: grower, pack_week, dispatched_on,
+          crop, variety, product, consignee.
+        type: count
+
+      - name: net_weight_dispatched
+        title: Net Weight Dispatched (kg)
+        description: >-
+          CONTRACT — SUM of pallet.net_weight_value (kg) over dispatched Sell pallets.
+          Null net_weight is EXCLUDED from the sum (produce sold by count, e.g. mango,
+          some avocado) — NEVER coalesced to 0. Pallet grain.
+        type: sum
+        sql: "{CUBE}.net_weight_value"
+
+      - name: line_count
+        title: Line Count
+        description: >-
+          CONTRACT — dispatch line count = distinct (load × product). A "line" is a
+          product on a load. Pallet grain (distinct over pallets). Filters: Sell,
+          dispatched, non-test.
+        type: count_distinct
+        sql: "{CUBE}.dispatch_load_id::text || ':' || COALESCE({CUBE}.product_id, '__nullpid__')"
+
+      - name: pallets_with_net_weight
+        title: Pallets With Net Weight
+        description: >-
+          Pallets carrying a non-null net_weight (capture-rate numerator). Demonstrates
+          null integrity — never coalesced.
+        type: count
+        filters:
+          - sql: "{CUBE}.net_weight_value IS NOT NULL"
+
+      - name: net_weight_capture_rate
+        title: Net Weight Capture Rate
+        description: >-
+          pallets_with_net_weight / pallet_count. Produce-dependent (papaya ~100%,
+          banana ~97%, avocado ~83%, mango 0% — sold by count). Null-safe ratio.
+        type: number
+        sql: "1.0 * {pallets_with_net_weight} / NULLIF({pallet_count}, 0)"
+        format: percent
+
+    dimensions:
+      - name: id
+        sql: "{CUBE}.id"
+        type: string
+        primary_key: true
+        public: false
+
+      - name: grower_key
+        title: Grower (consignor_id)
+        description: Grower identity = load consignor_id. RLS anchor.
+        sql: "{CUBE}.grower_key"
+        type: string
+
+      - name: consignee_key
+        title: Consignee / Customer DC (id)
+        sql: "{CUBE}.consignee_key"
+        type: string
+
+      - name: dispatched_on
+        title: Dispatch Date
+        sql: "{CUBE}.actual_pickup_on"
+        type: time
+
+      - name: pack_week
+        title: Pack Week
+        description: Pack-week code (e.g. Y25W31, the YxxWxx form) from extra_text_2; null for degenerate 'YW'.
+        sql: "CASE WHEN {CUBE}.pack_week_raw ~ '^Y[0-9][0-9]W[0-9][0-9]$' THEN {CUBE}.pack_week_raw END"
+        type: string
+
+      - name: crop
+        title: Crop
+        sql: "{CUBE}.crop_description"
+        type: string
+
+      - name: variety
+        title: Variety
+        sql: "{CUBE}.variety_description"
+        type: string
+
+      - name: product
+        title: Product
+        description: May carry caret display-format control codes (SPEC §9.9) — parse before display.
+        sql: "{CUBE}.product_description"
+        type: string
+
+      - name: product_id
+        sql: "{CUBE}.product_id"
+        type: string
+        public: false

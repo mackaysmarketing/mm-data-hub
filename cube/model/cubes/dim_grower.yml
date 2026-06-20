@@ -1,0 +1,46 @@
+cubes:
+  - name: dim_grower
+    title: Grower Dimension
+    description: >-
+      Conformed grower dimension (core.dim_grower), keyed on consignor_id — the RLS anchor.
+      Used to (a) bake the non-test filter into the dispatch cubes and (b) expose readable
+      grower code / name to the internal (unscoped) context. is_test = inactive *TEST entity.
+    public: false
+    sql_table: core.dim_grower
+
+    measures:
+      - name: count
+        type: count
+        public: false
+
+    dimensions:
+      - name: consignor_id
+        title: Grower (consignor_id)
+        sql: "{CUBE}.consignor_id::text"
+        type: string
+        primary_key: true
+
+      - name: grower_code
+        title: Grower Code
+        sql: "{CUBE}.code"
+        type: string
+
+      - name: grower_name
+        title: Grower Name
+        sql: "{CUBE}.org_name"
+        type: string
+
+      - name: is_grower
+        sql: "{CUBE}.is_grower"
+        type: boolean
+        public: false
+
+      - name: is_active
+        sql: "{CUBE}.is_active"
+        type: boolean
+        public: false
+
+      - name: is_test
+        sql: "{CUBE}.is_test"
+        type: boolean
+        public: false

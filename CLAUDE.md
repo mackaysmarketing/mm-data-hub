@@ -36,9 +36,32 @@ internal staff/service →  JWT claim  request.jwt.claims.app_metadata.is_intern
   `raw.ft_pallet`, and `core.dim_grower` scopes every grower query to their own rows.
 - mm-hub MUST set `consignor_id` / `is_internal` inside `app_metadata` (via the admin API or a
   Custom Access Token Hook) — NEVER as a top-level or `user_metadata` claim, or a grower could
-  forge it. `service_role` bypasses RLS for ingestion + Cube/Steep reads.
+  forge it. `service_role` bypasses RLS for ingestion; **Cube** reads via the least-privilege
+  `cube_readonly` role (permissive read policy, migrations `0011`/`0012`) and re-applies tenant
+  scope itself in `queryRewrite` (see the Cube section below).
 - mm-hub must NOT re-implement this filter client-side. The hub enforces it; mm-hub only
   presents the claim.
+
+## Semantic layer (Cube) — lives in THIS repo (`/cube`)
+The dispatch **metric layer** is code-defined in `/cube` (Cube Cloud deployment "MM Data Hub").
+Metrics are defined ONCE here; Steep and the future Hub MCP consume these governed definitions —
+they do not redefine metrics. Consume via the `dispatch` **view** only (base cubes are `public:false`).
+Full per-metric contracts: `cube/CONTRACTS.md`.
+- **Metric contracts are ADDITIVE-ONLY.** Add new measures/dimensions freely; NEVER redefine an
+  existing metric's meaning, grain, or baked-in filter set — it silently breaks every consumer.
+- **Baked-in filters** (encoded in each cube's SQL, not per query): `order_type='S'` (Sell),
+  dispatched (`actual_pickup_on` not null), non-test consignor. **Null integrity:** `net_weight`
+  summed with nulls EXCLUDED, never coalesced to 0. **Grain:** nothing below pallet/line;
+  `location_id` and harvest lineage not modelled.
+- **RLS = security context, enforced in `cube.js` `queryRewrite`** (NOT Postgres RLS): grower scope
+  from `app_metadata.consignor_id`; internal from `app_metadata.is_internal` (the same
+  app_metadata-only contract as migration `0010`); neither → **fail closed**. No dimension selection
+  can widen a grower's scope. Cube's DB role reads all rows; Cube narrows per query.
+- **DB access:** the least-privilege `cube_readonly` role (migrations `0011`/`0012`) — SELECT on
+  raw/core/semantic only, all-rows read via a permissive policy, no public/auth/storage, no writes.
+  Connection via env var (`CUBE_DB_URL` / Cube Cloud data source), never in code.
+- **Proofs (runnable):** `npm run cube:reconcile` (parity vs raw SQL) · `npm run cube:rls`
+  (three-context isolation). Deploy: `cd cube && npx cubejs-cli deploy --token <…>`.
 
 ## Stack
 - TypeScript (ESM, Node ≥ 22 — run `.ts` directly via `--experimental-strip-types`).

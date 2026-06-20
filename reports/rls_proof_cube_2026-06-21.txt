@@ -1,0 +1,22 @@
+
+> mm-data-hub@0.1.0 cube:rls
+> node --experimental-strip-types scripts/cube_rls_proof.ts
+
+=== Cube RLS proof (live dispatch view) ===
+
+internal: 38322 pallets / 5621 loads | A(MMLAR): 13186 | B(MMTRU): 7631
+
+PASS  internal sees data — internal pallet_count=38322
+PASS  grower A scope is exact — A=13186 vs internal|A=13186
+PASS  grower B scope is exact — B=7631 vs internal|B=7631
+PASS  grower A sees only itself — grower_keys=["0191e996-93b7-fcd1-170e-87c6aa517087"]
+PASS  grower B sees only itself — grower_keys=["0191f981-c9dc-4203-4f1b-3e9c5f5758d3"]
+PASS  internal sees many growers — 28 distinct grower_keys
+PASS  A and B are disjoint — no shared grower_key
+PASS  filter cannot widen scope (A→B = 0) — A filtered to B = 0
+PASS  no-claim is fail-closed — pallet_count=0
+PASS  forged top-level is_internal → 0 — pallet_count=0
+PASS  forged top-level consignor_id → 0 — pallet_count=0
+PASS  A + B ≤ internal total — 13186 + 7631 ≤ 38322
+
+=== 12/12 checks passed ===

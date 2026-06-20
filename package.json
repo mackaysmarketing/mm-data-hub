@@ -17,7 +17,9 @@
     "backfill": "node --experimental-strip-types src/loaders/backfill.ts",
     "reconcile": "node --experimental-strip-types src/reconcile.ts",
     "schema:diff": "node --experimental-strip-types src/schemaDiff.ts",
-    "schema:snapshot": "node --experimental-strip-types src/schemaDiff.ts --init"
+    "schema:snapshot": "node --experimental-strip-types src/schemaDiff.ts --init",
+    "cube:rls": "node --experimental-strip-types scripts/cube_rls_proof.ts",
+    "cube:reconcile": "node --experimental-strip-types scripts/cube_reconcile.ts"
   },
   "dependencies": {
     "dotenv": "^16.4.7",

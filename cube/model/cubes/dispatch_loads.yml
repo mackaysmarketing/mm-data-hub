@@ -1,0 +1,92 @@
+cubes:
+  - name: dispatch_loads
+    title: Dispatch Loads
+    description: >-
+      Dispatch loads (grain: one load). Source: raw.ft_dispatch_load joined to
+      core.dim_grower. Baked-in filters EVERY consumer inherits (encoded once, here in
+      the cube SQL — not per query): order_type = 'S' (Sell only), actual_pickup_on
+      IS NOT NULL (dispatched), and non-test consignor (dim_grower.is_test = false).
+      Grower attribution = the LOAD's consignor_id (pallet.harvest_load_id is null on
+      outbound — SPEC §9.1). location_id and harvest-load lineage are NOT modelled.
+    public: false
+
+    sql: >
+      SELECT
+        d.id,
+        d.consignor_id::text  AS grower_key,
+        d.consignee_id::text  AS consignee_key,
+        d.actual_pickup_on,
+        d.pack_date,
+        d.extra_text_2        AS pack_week_raw,
+        d.load_no,
+        d.order_type
+      FROM raw.ft_dispatch_load d
+      JOIN core.dim_grower g ON g.consignor_id = d.consignor_id
+      WHERE d.order_type = 'S'
+        AND d.actual_pickup_on IS NOT NULL
+        AND COALESCE(g.is_test, false) = false
+
+    joins:
+      - name: dim_grower
+        relationship: many_to_one
+        sql: "{CUBE}.grower_key = {dim_grower}.consignor_id"
+      # One load → many pallets. Rooting the `dispatch` view here keeps load_count at TRUE
+      # load grain (all dispatched Sell loads, incl. the ~45 with no pallet rows), while
+      # pallet measures aggregate over the LEFT-joined pallets.
+      - name: dispatch_pallets
+        relationship: one_to_many
+        sql: "{CUBE}.id = {dispatch_pallets}.dispatch_load_id"
+
+    measures:
+      - name: load_count
+        title: Load Count
+        description: >-
+          CONTRACT — count of dispatched Sell loads (load grain). Includes loads that
+          carry no pallets. Filters baked in: Sell, dispatched, non-test. Allowed dims:
+          grower, pack_week, dispatched_on, consignee.
+        type: count_distinct
+        sql: "{CUBE}.id"
+
+    dimensions:
+      - name: id
+        sql: "{CUBE}.id"
+        type: string
+        primary_key: true
+        public: false
+
+      - name: grower_key
+        title: Grower (consignor_id)
+        description: Grower identity = load consignor_id. RLS anchor. NOT harvest_load_id.
+        sql: "{CUBE}.grower_key"
+        type: string
+
+      - name: consignee_key
+        title: Consignee / Customer DC (id)
+        sql: "{CUBE}.consignee_key"
+        type: string
+
+      - name: dispatched_on
+        title: Dispatch Date
+        description: Dispatch date = actual_pickup_on.
+        sql: "{CUBE}.actual_pickup_on"
+        type: time
+
+      - name: pack_week
+        title: Pack Week
+        description: >-
+          Pack-week code (e.g. Y25W31, the YxxWxx form) parsed from extra_text_2 (SPEC §9.5).
+          Returns null for the degenerate 'YW' placeholder, matching parsePackWeek() in the loaders.
+        sql: "CASE WHEN {CUBE}.pack_week_raw ~ '^Y[0-9][0-9]W[0-9][0-9]$' THEN {CUBE}.pack_week_raw END"
+        type: string
+
+      - name: load_no
+        title: Load No
+        sql: "{CUBE}.load_no"
+        type: string
+
+      - name: order_type
+        title: Order Type
+        description: Source code S=Sell / B=Buy (text, never an enum). Baked to 'S' here.
+        sql: "{CUBE}.order_type"
+        type: string
+        public: false

@@ -1,3 +1,91 @@
+# Handoff (Sprint 2): Cube semantic layer over the dispatch model
+Date: 2026-06-21
+Session type: Build (Cube project authored in-repo + deployed live to Cube Cloud; parity + RLS proven)
+
+## What was completed
+All Sprint-2 acceptance criteria met **with evidence** against the live deployment.
+
+- **Cube project in-repo** at `/cube` — `cube.js` (config + RLS) and YAML models
+  (`model/cubes/*`, `model/views/dispatch.yml`). Deployed to Cube Cloud deployment **"MM Data
+  Hub"** (id 1), REST API host `lime-lamprey.aws-us-west-2.cubecloudapp.dev`, via
+  `npx cubejs-cli deploy --token …`. The auto-generated **public-schema starter model**
+  (`consignments_view` / `remittances_view` / `remittance_lines_view` / `retail_prices_view`,
+  all built on mm-hub's `public.*`) was **replaced** by the `dispatch` view.
+- **Measures shipped** (over `raw.ft_dispatch_load` + `raw.ft_pallet` + `core.dim_grower`):
+  `load_count`, `pallet_count`, `net_weight_dispatched`, `line_count` (+ `pallets_with_net_weight`
+  and `net_weight_capture_rate` for null-integrity proof). **Dimensions:** `grower_key`
+  (consignor_id) + readable `grower_code`/`grower_name`, `pack_week` (parsed `YxxWxx`),
+  `crop`/`variety`/`product`, `consignee_key`, `dispatched_on`. Contracts: `cube/CONTRACTS.md`.
+- **Baked-in filters** (in each cube's SQL, not per query): `order_type='S'` (Sell), dispatched
+  (`actual_pickup_on` not null), non-test consignor. **Null integrity:** `net_weight_dispatched`
+  sums with nulls excluded, never coalesced. **Grain safety:** nothing below pallet/line;
+  `location_id` + harvest lineage not modelled. Base cubes `public:false` — all access via the view.
+- **Metric parity — 336/336** (`npm run cube:reconcile`, `reports/reconciliation_cube_2026-06-20.md`):
+  every measure reconciles to a direct SQL aggregate over raw/core — overall, by **28 growers**,
+  by **55 pack-weeks**, plus capture rates by crop. Counts exact; net weight within 0.01 kg.
+  - `load_count`=5621 · `pallet_count`=38322 · `net_weight_dispatched`=27,822,146 kg · `line_count`=8849.
+- **RLS — 12/12** (`npm run cube:rls`, `reports/rls_proof_cube_2026-06-21.txt`): grower A (MMLAR) and
+  grower B (MMTRU) each see ONLY their own rows (exact match to internal-filtered-to-that-grower);
+  internal sees all 28 growers; a filter cannot widen scope (A→B = 0); **fail-closed** on no-claim;
+  and **all three forgery vectors rejected** (forged top-level `is_internal` / `consignor_id` → 0
+  rows — proving the `app_metadata`-only contract identical to migration `0010`).
+- **Read-only role** (criterion #4) — migrations `0011` (role + grants) and `0012` (permissive
+  read policy). `cube_readonly` proven LIVE through the session pooler: reads all rows in
+  raw/core/semantic, **0 of 36 `public` tables readable**, writes denied. Creds in `.env`
+  (`CUBE_DB_URL`).
+
+## Reconciliation deltas (logged, not hidden)
+1. **`load_count` = 5,621 vs 5,576.** `load_count` is TRUE load grain (all dispatched Sell loads).
+   45 of those carry **no pallet rows** (loads-with-pallets = 5,576) — some are loads whose pallets
+   predate the pallet backfill window. The view is rooted on `dispatch_loads` so `load_count` counts
+   them; pallet measures correctly exclude them (they contribute 0 pallets/weight/lines).
+2. **Produce capture rates differ from the SPEC §9.8 hints.** Against the full FY25–26 **Sell
+   dispatch** population: banana **97.5%**, papaya **100%**, avocado **83.1%**, passionfruit 93.5%,
+   **mango 0%** (591 pallets, all null — sold by count). SPEC's "banana ~88%, avocado ~41%" were
+   scoping-era estimates on a different/broader population. Cube reproduces the raw SQL **exactly**
+   on the same population, and **mango 0%** proves null is never coerced to 0.
+3. Order-type split: `S`=5,621 / `B`=305 — the 305 Buy loads (and their 474 pallets) are excluded
+   by the baked Sell filter (38,796 total pallets → 38,322 dispatched Sell pallets).
+
+## Two open decisions for next sprint
+1. **Cube production deployment target** — currently the Cube Cloud dev deployment "MM Data Hub"
+   (dev-mode proof, sufficient for this sprint). Choose Cube Cloud (dedicated) vs self-host on
+   Railway before Steep/MCP depend on it. *Not decided here, by SPRINT scope.*
+2. **Steep wiring** — connect Steep to Cube once the deployment target is fixed. Bundled with this:
+   **repoint Cube Cloud's data source** from its current (superuser/bypassing) role to
+   `cube_readonly` (creds in `.env` `CUBE_DB_URL`; Supavisor session pooler accepts the custom role).
+
+## Test status
+- `npm run typecheck` clean · `npm test` **16/16** · `npm run cube:rls` **12/12** ·
+  `npm run cube:reconcile` **336/336** (exit 0).
+
+## Known issues / notes
+- **Data source still on the old role.** The Cube Cloud data source currently uses the original
+  (superuser/bypassing) role — that's why first queries returned full data. Repoint to
+  `cube_readonly` is the follow-up above; the model + proofs already use it for the SQL side.
+- **CLI-deploy dependency.** `cube/package.json` depends on `@cubejs-backend/server-core` — needed
+  ONLY by the `cubejs-cli deploy` bundler. `cube/node_modules` is gitignored; `cube/package-lock.json`
+  pins it.
+- **Cube YAML f-strings.** Cube treats `{…}` in YAML string VALUES as Python f-strings — keep curly
+  braces out of descriptions/titles (use `Y25W31`, not `Y{YY}W{WW}`). `{CUBE}`/`{member}` in `sql:`
+  are the intended references and are fine.
+
+## Files changed (Sprint 2)
+- `cube/cube.js`, `cube/model/cubes/{dispatch_loads,dispatch_pallets,dim_grower}.yml`,
+  `cube/model/views/dispatch.yml`, `cube/{README,CONTRACTS}.md`, `cube/package.json`,
+  `cube/.env.example`, `cube/.gitignore`
+- `supabase/migrations/0011_cube_readonly_role.sql`, `0012_cube_readonly_rls_read.sql`
+- `scripts/{cube_lib,cube_rls_proof,cube_reconcile}.ts`, `package.json` (cube:* scripts),
+  `tsconfig.json` (scripts/**), `.env.example`, `CLAUDE.md`
+- `reports/reconciliation_cube_2026-06-20.md`, `reports/rls_proof_cube_2026-06-21.txt`
+
+## Exact next step
+Repoint the Cube Cloud data source to `cube_readonly`, then wire Steep to the `dispatch` view
+(decide the production deployment target first). GP/settlement metrics remain Phase 2
+(blocked on read-replica creds).
+
+---
+
 # Handoff: FreshTrack dispatch landing + grower dispatch view
 Date: 2026-06-20
 Session type: Build (full-send: migrations applied + full FY25-26 backfill executed on live `data_hub`)

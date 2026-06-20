@@ -1,0 +1,10 @@
+# Cube local dev / secrets — never commit
+.env
+.env.local
+
+# Cube Store + build artifacts
+.cubestore/
+node_modules/
+
+# CLI deploy artifact (deployment url/id written by `cubejs-cli deploy`)
+.cubecloud

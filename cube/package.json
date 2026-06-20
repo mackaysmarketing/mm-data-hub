@@ -1,0 +1,9 @@
+{
+  "name": "mm-data-hub-cube",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Mackays Data Hub — Cube semantic layer (dispatch). Reads raw/core only; dispatch metrics defined ONCE for Steep + the future Hub MCP. RLS via security context (consignor_id).",
+  "dependencies": {
+    "@cubejs-backend/server-core": "^1.6.60"
+  }
+}
