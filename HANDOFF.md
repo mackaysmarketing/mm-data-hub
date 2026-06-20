@@ -64,10 +64,19 @@ A 5-dimension adversarial review (migrations, RLS, loader, data, completeness) r
   RLS tests (`npm run test:integration`; self-skip without `DATABASE_URL`).
 - Doc fixes: SPEC `order_type ('S'/'B')`; CLAUDE.md claim contract → `app_metadata`; the
   idempotency proof script now rolls back (self-restoring).
+- **[bug → fixed]** Running the committed loader end-to-end (via a temporary scoped pooler role)
+  surfaced a real runtime bug `tsc`/unit-tests missed: `src/lib/freshtrack.ts` used a TS
+  **parameter property** (`constructor(…, readonly errors)`), which is non-erasable and crashes
+  Node `--experimental-strip-types` — so every loader would fail on startup. Fixed (explicit
+  field + assignment) and guarded by `tests/imports.test.ts` (imports every `src` module so
+  `npm test` parses them all under strip-types). The committed `load:entities` then ran clean
+  against the live hub: `entities upserted=318 dim_grower=156 test_consignors=3`, rc=0 — so the
+  committed `pg` path (`makePool`/`upsertNodes`/`refresh_dim_grower`) is now PROVEN, not inferred.
+  Connection note: use the **session pooler** `aws-1-ap-southeast-2.pooler.supabase.com:5432`
+  (`postgres.<ref>`) — the direct host is IPv6-only and doesn't resolve here.
 
-Still open (cannot close here): the committed `pg` loaders were never run end-to-end (no DB
-password on this machine — data came from the now-dropped server-side functions), and the push is
-blocked on org write access. Both are honestly disclosed below.
+Status: the push is complete (all commits on the remote); the only thing still needing you is the
+DB password in `.env` if you want to run the loaders yourself.
 
 ## What is NOT done (out of scope — later phases)
 - mm-hub portal page that renders the view (separate mm-hub sprint).
@@ -77,10 +86,10 @@ blocked on org write access. Both are honestly disclosed below.
   schedule is a later sprint.
 
 ## Known issues / debt
-- **Push blocked (permissions)** — committed locally on `main`; `origin` set to
-  `github.com/mackaysmarketing/mm-data-hub`. `git push` returns 403: the authed account
-  `timbowilcox` has read (`pull`) but not `push` on this org repo. Grant `timbowilcox` write
-  access (or push from an account that has it), then `git push -u origin main`.
+- **Pushed** ✅ — all commits are on `mackaysmarketing/mm-data-hub` `main` (`git ls-remote`
+  confirmed). The local `gh`/`timbowilcox` has no write access; pushed with a `mackaysmarketing`
+  PAT via the remote URL then scrubbed it (see CLAUDE.md "Git & pushing"; never use `gh` here —
+  it hangs on `api.github.com`).
 - **46 loads have no pallets** (0.8%) — empty/cancelled loads or pallets packed before the pallet
   window start (2025-05-01). Surfaced in reconciliation; not a loader fault.
 - **6 loads with a non-zero box delta** — `stock_boxes` carries a round planned/ordered quantity
@@ -99,7 +108,9 @@ blocked on org write access. Both are honestly disclosed below.
   `http` extension were **dropped** at end of session; the project is back to a clean state. The
   committed loader (`src/loaders/*`) is the production path and connects via `pg` + `DATABASE_URL`.
 - **`DATABASE_URL` password** — not present on this machine, so `.env` has a `REPLACE_WITH_DB_
-  PASSWORD` placeholder. Fill it to run `npm run backfill` / `npm run reconcile` locally.
+  PASSWORD` placeholder (now pointed at the working session pooler host). Fill it to run
+  `npm run backfill` / `reconcile` / `test:integration` locally. (`load:entities` was already
+  proven end-to-end this session via a temporary scoped role.)
 - **Migration history** — applied via the Supabase management API as `0001`–`0009`. `supabase db
   push` from a fresh clone will no-op against the hub (objects already exist; DDL is idempotent).
 
@@ -113,7 +124,7 @@ from the live endpoint with credentials, then begin the mm-hub portal page that 
 - `supabase/migrations/0001`–`0010_*.sql` (`0010` = post-audit security hardening)
 - `src/lib/{env,freshtrack,db,windows,parsers,specs,util}.ts`
 - `src/loaders/{entities,dispatch,pallets,backfill}.ts`, `src/reconcile.ts`, `src/schemaDiff.ts`
-- `tests/{windows,parsers,specs}.test.ts`, `tests/integration/loader.integration.test.ts`
+- `tests/{windows,parsers,specs,imports}.test.ts`, `tests/integration/loader.integration.test.ts`
 - `sql/{rls_two_context_proof,idempotency_resume_proof}.sql`
 - `references/grading-rubrics.md`, `references/freshtrack-schema.snapshot.json`
 - `reports/reconciliation_2026-06-20.md`

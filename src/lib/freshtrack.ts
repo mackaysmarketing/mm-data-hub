@@ -8,8 +8,12 @@ export interface GraphQLError {
 }
 
 class FreshTrackError extends Error {
-  constructor(message: string, readonly errors?: GraphQLError[]) {
+  // Note: an explicit field + assignment (NOT a constructor parameter property), because
+  // parameter properties are non-erasable TS and crash Node's --experimental-strip-types.
+  readonly errors?: GraphQLError[];
+  constructor(message: string, errors?: GraphQLError[]) {
     super(message);
+    this.errors = errors;
     this.name = 'FreshTrackError';
   }
 }
