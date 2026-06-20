@@ -65,7 +65,23 @@ internal staff/service →  JWT claim  request.jwt.claims.app_metadata.is_intern
 - Acceptance criteria in `SPRINT.md` all checked **with evidence**.
 - `npm run typecheck` clean; `npm test` green.
 - Idempotency, window-resume, and two-context RLS isolation proven (SQL evidence).
-- `HANDOFF.md` updated and committed; pushed to `mackaysmarketing/mm-data-hub`.
+- `HANDOFF.md` updated and committed; pushed to `mackaysmarketing/mm-data-hub` (see Git & pushing).
+
+## Git & pushing (read before any git/gh command)
+- **Never run `gh` for anything.** This machine cannot reach `api.github.com` (connectex to
+  4.237.22.34:443 times out), so `gh auth login`, `gh api`, and gh-as-git-credential-helper all
+  **hang**. The plain `github.com` git HTTPS endpoint works fine — use it.
+- The repo is owned by the **`mackaysmarketing`** GitHub account. The local `gh` is signed in as
+  `timbowilcox`, which has **no write access** — ignore it.
+- To push, authenticate git directly with a `mackaysmarketing` **classic PAT (repo scope)** via the
+  remote URL, push with credential helpers disabled (so git never falls back to the hanging gh
+  helper), then scrub the token back out of the remote URL:
+  ```
+  git remote set-url origin https://mackaysmarketing:<PAT>@github.com/mackaysmarketing/mm-data-hub.git
+  git -c credential.helper= push -u origin main
+  git remote set-url origin https://github.com/mackaysmarketing/mm-data-hub.git
+  ```
+  Never commit or echo the PAT; always restore the clean remote URL afterwards.
 
 ## What NOT to do
 - Do not migrate, alter, or read `public.*` (mm-hub's schema).
