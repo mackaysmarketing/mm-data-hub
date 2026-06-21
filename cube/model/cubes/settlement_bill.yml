@@ -1,0 +1,128 @@
+cubes:
+  - name: settlement_bill
+    title: Grower Settlement
+    description: >-
+      Grower settlement at RCTI (bill) grain. Source: core.fact_settlement_bill — NetSuite RCTIs
+      conformed (vendor.entityid crosswalk to consignor_id, sign-based gross/deduction split,
+      paid date from VendPymt). ADDITIVE to the dispatch metrics — this NEVER redefines a dispatch
+      metric. RLS anchor: grower_key (consignor_id), scoped in cube.js queryRewrite from
+      app_metadata.consignor_id (same fail-closed contract as dispatch). Deduction measures are
+      signed (<= 0). Amounts are summed with nulls excluded, never coalesced to 0.
+    public: false
+    sql_table: core.fact_settlement_bill
+
+    measures:
+      - name: rcti_count
+        title: RCTI Count
+        description: CONTRACT — count of grower RCTIs (bill grain). Allowed dims — grower, settlement_date, paid_status.
+        type: count_distinct
+        sql: "{CUBE}.bill_id"
+
+      - name: gross_sales
+        title: Gross Sales
+        description: CONTRACT — SUM of gross_sales (positive product/sale lines). Bill grain. Nulls excluded.
+        type: sum
+        sql: "{CUBE}.gross_sales"
+
+      - name: total_deductions
+        title: Total Deductions
+        description: CONTRACT — SUM of all deductions (signed, <= 0). = freight+warehouse+market+larapinta+misc+other.
+        type: sum
+        sql: "{CUBE}.total_deductions"
+
+      - name: freight_deductions
+        title: Freight Deductions (FR)
+        type: sum
+        sql: "{CUBE}.deduction_freight"
+
+      - name: warehouse_deductions
+        title: Warehouse Deductions (WH)
+        type: sum
+        sql: "{CUBE}.deduction_warehouse"
+
+      - name: market_deductions
+        title: Market Deductions (MD)
+        type: sum
+        sql: "{CUBE}.deduction_market"
+
+      - name: larapinta_deductions
+        title: Larapinta Deductions (LA)
+        type: sum
+        sql: "{CUBE}.deduction_larapinta"
+
+      - name: misc_deductions
+        title: Misc Deductions (MI)
+        type: sum
+        sql: "{CUBE}.deduction_misc"
+
+      - name: tax_total
+        title: Tax (GST/RCTI)
+        type: sum
+        sql: "{CUBE}.tax_total"
+
+      - name: net_paid
+        title: Net Paid
+        description: CONTRACT — SUM of net_paid (gross + deductions + tax = what the grower receives). Reconciles to -bill_total.
+        type: sum
+        sql: "{CUBE}.net_paid"
+
+      - name: paid_rcti_count
+        title: Paid RCTIs
+        type: count_distinct
+        sql: "{CUBE}.bill_id"
+        filters:
+          - sql: "{CUBE}.paid_status = 'paid'"
+
+      - name: unpaid_rcti_count
+        title: Unpaid RCTIs
+        description: RCTIs with no linked payment (paid_date null). Demonstrates unpaid are flagged, not zero-dated.
+        type: count_distinct
+        sql: "{CUBE}.bill_id"
+        filters:
+          - sql: "{CUBE}.paid_status = 'unpaid'"
+
+    dimensions:
+      - name: bill_id
+        sql: "{CUBE}.bill_id"
+        type: number
+        primary_key: true
+        public: false
+
+      - name: grower_key
+        title: Grower (consignor_id)
+        description: Grower identity = consignor_id (via the NetSuite crosswalk). RLS anchor.
+        sql: "{CUBE}.consignor_id::text"
+        type: string
+
+      - name: grower_code
+        title: Grower Code
+        sql: "{CUBE}.grower_code"
+        type: string
+
+      - name: grower_name
+        title: Grower Name
+        sql: "{CUBE}.grower_name"
+        type: string
+
+      - name: tranid
+        title: RCTI No
+        sql: "{CUBE}.tranid"
+        type: string
+
+      - name: settlement_date
+        title: Settlement Date
+        description: The RCTI transaction date (trandate).
+        sql: "{CUBE}.settlement_date"
+        type: time
+
+      - name: paid_date
+        title: Paid Date
+        description: Date the RCTI was paid (from VendPymt). Null when unpaid.
+        sql: "{CUBE}.paid_date"
+        type: time
+
+      - name: paid_status
+        title: Paid Status
+        description: paid / partial / unpaid.
+        sql: "{CUBE}.paid_status"
+        type: string

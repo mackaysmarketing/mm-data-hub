@@ -3,8 +3,9 @@
 ## What this is
 The **Mackays Data Hub** ingestion + modelling repo. It lands source data into the shared
 Supabase hub project `data_hub` (ref `uqzfkhsdyeokwnkpcxui`, region `ap-southeast-2`) and
-shapes it through `raw → core → semantic`. FreshTrack (packhouse) is the first and only
-source in v1. See `SPEC.md` for the full design contract and `SPRINT.md` for current scope.
+shapes it through `raw → core → semantic`. **FreshTrack** (packhouse, dispatch) was the first source;
+**NetSuite** (finance, grower settlement / RCTIs) is the second — see the NetSuite settlement section
+below. See `SPEC.md` for the full design contract and `SPRINT.md` for current scope.
 
 ## Schema-ownership boundary (NON-NEGOTIABLE)
 The `data_hub` Supabase project is **shared**. Ownership is split by schema:
@@ -94,6 +95,43 @@ never redefines one. Full surface + run docs: `mcp/README.md`. Start: `npm run m
 - **Proof (runnable):** `npm run mcp:proof` — identity propagation + parity across internal + 2
   growers + no-claim + forged, both paths (`reports/mcp_proof_<date>.txt`). Secrets via env
   (`CUBE_API_SECRET`, `MCP_DB_URL`), never in code.
+
+## NetSuite settlement (Sprint 5) — RCTIs land in THIS repo (`raw.ns_*` → `core` → `semantic`)
+The **second source**: NetSuite (account `11176992`, subsidiary **2** = Mackays Marketing). Lands grower
+**settlement (RCTIs)** — gross by product, every deduction, net, and the **paid date** (which FreshTrack
+can't give). Same medallion + RLS contract as FreshTrack dispatch.
+- **READ-ONLY out of NetSuite — never write.** Access is SuiteQL REST over **OAuth 1.0a TBA
+  (HMAC-SHA256)**; the signer is `src/lib/oauth1.ts` (dependency-free, KAT-proven). Creds in gitignored
+  `.env` (`NS_ACCOUNT_ID` + `NS_CONSUMER_KEY/SECRET` + `NS_TOKEN_ID/SECRET`). The TBA role needs
+  **SuiteAnalytics Workbook** (gates SuiteQL) + Lists→Vendors/Items + Transactions→Find Transaction/Bills.
+  Prove auth live: `npm run ns:smoke`. The **REST SuiteQL schema is narrower** than the discovery MCP —
+  no `amount`/`posting`/`account`, no `transaction.subsidiary`; use `foreignamount`/`netamount`,
+  `mainline`/`taxline`, `uniquekey` line PK.
+- **RCTIs = `transaction WHERE type='VendBill' AND entity IN (vendor WHERE category=110)`** (110 = Growers,
+  39 vendors). Subsidiary-2 scope is transitive (all 39 are sub 2). **Incremental key = `lastmodifieddate`**
+  (a bill mutates after `trandate`); `trandate` = settlement date. Run: `npm run ns:backfill`
+  (`-- --since=YYYY-MM-DD` for incremental), then `npm run ns:core`.
+- **Grower crosswalk — DETERMINISTIC: `vendor.entityid = core.dim_grower.code` → `consignor_id`.** Use
+  `entityid`, **never** `externalid` (rotten: `LRCTU`→`LRCDR`, plus nulls). A code may map to active +
+  inactive dim rows (e.g. `WADDA`) → resolve to the **active** row (`core.crosswalk_ns_grower`). Surface
+  any unmapped active grower; never silently drop.
+- **Line-type contract (the no-double-count guard):** `mainline='T'` = the A/P summary line (= bill total);
+  clean detail = `mainline='F'`; `taxline='T'` = GST/RCTI tax. **gross vs deduction by SIGN** of
+  `foreignamount` (>0 = money to grower; <0 = deduction). Invariant (proven): `SUM(foreignamount WHERE
+  mainline='F') = -(mainline) = bill total`. `core.fact_settlement_bill.recon_diff` = 0 for every bill.
+- **Charge taxonomy (`core.dim_ns_charge`, classifier `src/lib/ns_charges.ts`):** `itemid` prefix = category
+  — `9xxxxx` PRODUCT (910 banana / 920 papaya / 930 avocado / 960 passionfruit), `1` FR (Freight),
+  `2` WH (Warehouse), `3` MD (Market Deductions), `4` MI (Misc), `591xxx` LA (Larapinta — a full parallel
+  sales+charge set). `displayname` = `Category - Subcategory - Detail` for charges. Unknown → OTHER (surfaced).
+- **Paid date** from `VendPymt`, linked via `raw.ns_bill_payment_link` (PreviousTransactionLineLink,
+  `linktype='Payment'`). Unpaid RCTIs → **null paid_date, flagged, never zero-dated**.
+- **`semantic.grower_settlement`** (bill grain) — gross, deductions by category, net, **paid_date
+  first-class**. `security_invoker`; RLS by `consignor_id` via the **same `app_metadata`-only, fail-closed**
+  helpers as migrations `0008`/`0010`. **Cube settlement metrics are ADDED, never redefining a dispatch
+  metric**; `cube.js` `queryRewrite` scopes the `settlement` view with the identical contract.
+- **Proofs (runnable):** `npm run ns:reconcile` (line reconciliation + TS-oracle drift guard) ·
+  `npm run ns:rls` (3 contexts + fail-closed + forgery) · `npm run ns:parity` (hub ↔ live NetSuite) ·
+  `npm run cube:settlement` (live Cube metrics + RLS, after deploy).
 
 ## Stack
 - TypeScript (ESM, Node ≥ 22 — run `.ts` directly via `--experimental-strip-types`).

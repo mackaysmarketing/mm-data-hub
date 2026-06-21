@@ -7,14 +7,29 @@ import { env } from './env.ts';
 
 const { Pool } = pg;
 
+/** Force "encrypt, don't verify" — recent pg makes `sslmode=require` verify the chain, which
+ *  fails on the Supabase pooler's private-CA cert. Rewrite sslmode to no-verify (string-only, so a
+ *  password with special chars is never re-encoded). */
+function noVerifySsl(connStr: string): string {
+  return /[?&]sslmode=/i.test(connStr)
+    ? connStr.replace(/sslmode=[^&]*/i, 'sslmode=no-verify')
+    : connStr + (connStr.includes('?') ? '&' : '?') + 'sslmode=no-verify';
+}
+
 export function makePool(): pg.Pool {
-  return new Pool({ connectionString: env.databaseUrl(), max: 4 });
+  // Same TLS posture as mcp/db.ts and the CUBE_DB_URL/MCP_DB_URL `sslmode=no-verify` connections.
+  return new Pool({
+    connectionString: noVerifySsl(env.databaseUrl()),
+    max: 4,
+    ssl: { rejectUnauthorized: false },
+  });
 }
 
 export type ColKind =
   | 'text'
   | 'uuid'
   | 'int'
+  | 'bigint'
   | 'numeric'
   | 'bool'
   | 'timestamptz'
@@ -47,6 +62,8 @@ function extract(c: Column): string {
       return `nullif(${j},'')::uuid`;
     case 'int':
       return `nullif(${j},'')::integer`;
+    case 'bigint':
+      return `nullif(${j},'')::bigint`;
     case 'numeric':
       return `nullif(${j},'')::numeric`;
     case 'bool':

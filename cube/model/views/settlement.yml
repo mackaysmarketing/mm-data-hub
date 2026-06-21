@@ -1,0 +1,38 @@
+views:
+  - name: settlement
+    title: Settlement
+    description: >-
+      Governed grower-settlement metric surface (RCTI / bill grain), code-defined here and consumed
+      by Steep and the Hub MCP. The base cube is private; everything flows through this view so RLS
+      and the conformed model cannot be bypassed.
+
+      RLS: every query is row-filtered to the caller's consignor via the security context
+      (app_metadata.consignor_id) in cube.js queryRewrite. Internal context (is_internal) is
+      unscoped. Neither → fail closed. No dimension selection can widen a grower's scope.
+
+      Contract discipline: settlement metrics are ADDITIVE — they never redefine a dispatch metric.
+      Deduction measures are signed (<= 0); net_paid is what the grower receives.
+    public: true
+
+    cubes:
+      - join_path: settlement_bill
+        includes:
+          - rcti_count
+          - gross_sales
+          - total_deductions
+          - freight_deductions
+          - warehouse_deductions
+          - market_deductions
+          - larapinta_deductions
+          - misc_deductions
+          - tax_total
+          - net_paid
+          - paid_rcti_count
+          - unpaid_rcti_count
+          - grower_key
+          - grower_code
+          - grower_name
+          - tranid
+          - settlement_date
+          - paid_date
+          - paid_status

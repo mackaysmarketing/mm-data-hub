@@ -37,6 +37,41 @@ function readClaims(securityContext) {
   return { consignorId, isInternal };
 }
 
+// Each governed view's RLS anchor. queryRewrite scopes whichever views a query references — so the
+// SAME app_metadata contract covers dispatch and settlement without one ever leaking into the other.
+const VIEW_GROWER_KEYS = { dispatch: 'dispatch.grower_key', settlement: 'settlement.grower_key' };
+
+/** Every member name referenced anywhere in a query (measures/dims/segments/time/filters/order). */
+function collectMembers(query) {
+  const out = [];
+  const push = (m) => { if (typeof m === 'string') out.push(m); };
+  (query.measures || []).forEach(push);
+  (query.dimensions || []).forEach(push);
+  (query.segments || []).forEach(push);
+  (query.timeDimensions || []).forEach((td) => { if (td && td.dimension) push(td.dimension); });
+  const walk = (fs) => (fs || []).forEach((f) => {
+    if (!f) return;
+    push(f.member);
+    push(f.dimension);
+    if (Array.isArray(f.and)) walk(f.and);
+    if (Array.isArray(f.or)) walk(f.or);
+  });
+  walk(query.filters);
+  if (Array.isArray(query.order)) query.order.forEach((o) => { if (Array.isArray(o)) push(o[0]); });
+  else if (query.order && typeof query.order === 'object') Object.keys(query.order).forEach(push);
+  return out;
+}
+
+/** The set of governed views (dispatch/settlement) a query touches. */
+function viewsInQuery(query) {
+  const views = new Set();
+  for (const m of collectMembers(query)) {
+    const prefix = String(m).split('.')[0];
+    if (VIEW_GROWER_KEYS[prefix]) views.add(prefix);
+  }
+  return views;
+}
+
 module.exports = {
   // Per-tenant isolation of cache / pre-aggregations: each grower (and internal) keyed apart,
   // so one tenant's cached result can never be served to another.
@@ -53,26 +88,20 @@ module.exports = {
     const { consignorId, isInternal } = readClaims(securityContext);
     query.filters = query.filters || [];
 
-    // Internal / service context → unscoped (every consignor).
+    // Internal / service context → unscoped (every consignor, every view).
     if (isInternal) return query;
 
-    // Grower context → scope every query to the caller's consignor. Appended
-    // unconditionally; no member the consumer selects can widen the scope.
-    if (consignorId) {
+    // Grower → own consignor; neither internal nor a valid consignor → fail closed (NIL → 0 rows).
+    // Scope is appended on EACH governed view the query references (dispatch and/or settlement), so
+    // no dimension/filter the consumer selects can widen it, and the two views never cross-leak.
+    const value = consignorId || NIL_UUID;
+    for (const view of viewsInQuery(query)) {
       query.filters.push({
-        member: 'dispatch.grower_key',
+        member: VIEW_GROWER_KEYS[view],
         operator: 'equals',
-        values: [consignorId],
+        values: [value],
       });
-      return query;
     }
-
-    // Neither internal nor a valid consignor → fail closed (return no rows).
-    query.filters.push({
-      member: 'dispatch.grower_key',
-      operator: 'equals',
-      values: [NIL_UUID],
-    });
     return query;
   },
 

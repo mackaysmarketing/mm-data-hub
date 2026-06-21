@@ -24,6 +24,18 @@ export const env = {
   backfillEnd: () => process.env.BACKFILL_END?.trim() || null,
   windowDays: () => Number(optional('WINDOW_DAYS', '7')),
   filterLimit: () => Number(optional('FRESHTRACK_FILTER_LIMIT', '2000')),
+
+  // ── NetSuite (settlement / RCTI domain, Sprint 5) ──────────────────────────
+  // Token-Based Auth (OAuth 1.0a, HMAC-SHA256). Account id doubles as the OAuth realm.
+  // Read-only integration role; secrets live only in .env (gitignored).
+  nsAccountId: () => required('NS_ACCOUNT_ID'),
+  nsConsumerKey: () => required('NS_CONSUMER_KEY'),
+  nsConsumerSecret: () => required('NS_CONSUMER_SECRET'),
+  nsTokenId: () => required('NS_TOKEN_ID'),
+  nsTokenSecret: () => required('NS_TOKEN_SECRET'),
+  // NetSuite-side scoping for the RCTI extractor.
+  nsSubsidiaryId: () => optional('NS_SUBSIDIARY_ID', '2'), // Mackays Marketing
+  nsGrowerVendorCategory: () => optional('NS_GROWER_VENDOR_CATEGORY', '110'), // Growers
 };
 
 // The test consignors excluded at pull (SPEC §9.6). Resolved dynamically from the entity

@@ -1,3 +1,98 @@
+# Handoff (Sprint 5): NetSuite RCTI / grower-settlement ingestion
+Date: 2026-06-22
+Session type: Build (NetSuite onboarded as a 2nd source; RCTI settlement landed raw→core→semantic; RLS + parity proven live; Cube metrics authored)
+
+## What was completed
+All Sprint-5 acceptance criteria met **with evidence** against the live hub (`data_hub` /
+`uqzfkhsdyeokwnkpcxui`) and live NetSuite (account `11176992`, subsidiary 2 = Mackays Marketing).
+
+- **NetSuite as a second source — read-only SuiteQL over OAuth 1.0a TBA (HMAC-SHA256).** The signer
+  (`src/lib/oauth1.ts`) is dependency-free, unit-proven against the published Twitter OAuth KAT, and
+  proven LIVE (`npm run ns:smoke` → 200 + real rows). The TBA integration role needs **SuiteAnalytics
+  Workbook** (gates SuiteQL) + Lists→Vendors/Items + Transactions→Find Transaction/Bills (View).
+- **raw.ns_* landed** (migration `0014`, `npm run ns:backfill`): fetch-first (no DB connection held
+  through the multi-page fetch), 1000-row batched upserts, idempotent (upsert on PK), resumable via
+  `raw.sync_window`, incremental by `lastmodifieddate`. Counts: **ns_vendor 39 · ns_item 638 ·
+  ns_vendor_bill 1095 · ns_vendor_bill_line 46193 · ns_vendor_payment 1042 · ns_bill_payment_link
+  1133.** Real REST-SuiteQL columns (NARROWER than the discovery MCP: no `amount`/`posting`/`account`,
+  no `transaction.subsidiary` — uses `foreignamount`/`netamount`, `mainline`/`taxline`, `uniquekey`
+  line PK). Subsidiary-2 scope is transitive (all 39 category-110 vendors are sub 2).
+- **core conformance** (migration `0015`, `npm run ns:core`):
+  - `core.crosswalk_ns_grower` — `vendor.entityid = dim_grower.code → consignor_id`; WADDA-style
+    duplicate codes resolved to the ACTIVE dim_grower row. **27/27 grower RCTIs mapped, 0 unmapped.**
+  - `core.dim_ns_charge` (638 items, the unit-tested classifier): FR 178 · WH 104 · MD 36 · LA 23 ·
+    MI 2 · PRODUCT 260 · OTHER 35 (from `itemid` prefix + `displayname`).
+  - `core.fact_settlement_bill` (1095, bill grain): gross, deductions by category (signed), tax,
+    net_paid, paid_date/status. **recon_diff = 0 for ALL bills.**
+- **semantic.grower_settlement** (migration `0016`) — bill-grain view; RLS by `consignor_id` via the
+  SAME `app_metadata`-only, fail-closed helpers as `0008`/`0010`; `security_invoker`; `cube_readonly`
+  read-all policy (mirror `0012`). **Paid date is first-class.**
+- **Cube** — additive `settlement` cube + view (`gross_sales`, `total_deductions`, FR/WH/MD/LA/MI
+  deductions, `net_paid`, `rcti_count`, paid/unpaid). `cube.js` `queryRewrite` extended to scope BOTH
+  the dispatch and settlement views per query (dispatch RLS preserved — verified by the no-regression
+  run). **Deployed live** to Cube Cloud ("MM Data Hub"); the base cube is `settlement_bill`, exposed
+  via the public `settlement` view. `npm run cube:settlement` → **7/7**: internal net_paid/rcti_count
+  match the DB fact, grower ROLFE scoped to its own, no-claim/forged-top-level → 0.
+
+## Evidence (runnable)
+- `npm run ns:reconcile` — A(DB recon)=PASS · B(oracle net = −bill_total)=PASS · C(oracle = SQL fact,
+  no drift)=PASS · unmapped=0 · OTHER deductions = **−$221** (surfaced, not hidden).
+- `npm run ns:rls` — **7/7**: internal sees all 1095; ROLFE/MACBO see only their own 102 (disjoint);
+  no-claim→0; forged top-level→0; a grower filtering to another → 0 (no widening).
+- `npm run ns:parity` — **5/5**: bill count 1095=1095; Σ bill_total = NetSuite Σ foreigntotal (Δ=0);
+  Σ net_paid = −Σ foreigntotal; every grower reconciles (0/27 mismatch); spot-check `2528-LMBEP`
+  line-by-line exact.
+- Totals: gross **$174,919,596.36** − deductions **$32,498,332.21** − tax **$2,718,743.69** =
+  net_paid **$139,702,520.46** = −Σ bill_total. Paid **1087** / unpaid **8** (flagged, null paid_date).
+
+## Test status
+- `npm run typecheck` clean · `npm test` **48/48** (OAuth KAT; charge classification; line rollup
+  reproducing the live ZONTA reconciliation; WADDA crosswalk; line-type filtering).
+- **No regression:** `cube:rls` **12/12** · `cube:reconcile` **347/347** · `mcp:proof` **25/25**.
+- **Cube settlement live:** `cube:settlement` **7/7** (internal parity + grower scope + fail-closed + forged).
+
+## Decisions stated
+- **Incremental key = `lastmodifieddate`** (change capture — a bill mutates after `trandate`:
+  deductions corrected, approval, payment-application flips status). `trandate` = settlement/business
+  date. NetSuite has `limit`/`offset` → offset pagination (no time-windowing needed).
+- **Gross vs deduction by SIGN** (positive = money to grower = gross; negative = deduction), category
+  (FR/WH/MD/LA/MI) by `itemid` prefix. Reconciles by construction; LA's mixed sales+charges handled.
+- `semantic.grower_settlement` = **bill grain** (user decision); line detail stays in core.
+
+## What is NOT done (deferred — not faked)
+- Retailer AR (CustInvc, 12,529) + Finance/GL → later NetSuite sprints.
+- Line-to-load lineage (settlement is product-grain; FreshTrack read-replica still blocked).
+- Write-back to NetSuite — never (read-only TBA role).
+
+## Known issues / notes
+- **`.env` reverts** — something on this machine (an editor with `.env` open, or a file-sync)
+  restored `.env`'s `DATABASE_URL` to the placeholder mid-session, which produced spurious `28P01`
+  auth failures (NOT a pooler lockout, as first suspected). The committed loaders read `DATABASE_URL`
+  at startup — keep `.env` stable; each run here rewrote it immediately before invoking.
+- `makePool` now forces `sslmode=no-verify` + `rejectUnauthorized:false` (the Supabase pooler's
+  private-CA cert fails Node ≥20's default verification) and `db.ts` gained a `bigint` ColKind —
+  latent fixes that also unblock the existing dispatch loaders on Node 25.
+- Loader fetches each stream WITHOUT holding a DB connection — a connection left idle through the
+  ~46k-line fetch gets dropped by the pooler, which crashed the first two attempts.
+
+## Files changed (Sprint 5)
+- `src/lib/{oauth1,netsuite,ns_specs,ns_charges,ns_lines,ns_crosswalk}.ts`; `src/lib/{env,db}.ts`
+  (NS env + `bigint` + ssl)
+- `src/loaders/{ns_settlement,ns_core}.ts`
+- `supabase/migrations/{0014_raw_ns_settlement,0015_core_settlement,0016_semantic_grower_settlement}.sql`
+- `cube/model/cubes/settlement_bill.yml`, `cube/model/views/settlement.yml`, `cube/cube.js` (queryRewrite)
+- `scripts/{ns_smoke,ns_line_reconcile,ns_settlement_rls_proof,ns_net_parity,cube_settlement_check}.ts`
+- `tests/{oauth1,ns_charges,ns_lines,ns_crosswalk}.test.ts`
+- `package.json` (ns:* + cube:settlement scripts), `.env.example` (NS_*), `CLAUDE.md`, `HANDOFF.md`
+- `reports/ns_line_reconcile_2026-06-21.md`
+
+## Exact next step
+Start the retailer-AR (CustInvc, 12,529) NetSuite sprint over the same TBA/medallion pattern.
+Rotate the chat-shared secrets (Cube deploy token + `CUBEJS_API_SECRET`) and fix whatever keeps
+reverting `DATABASE_URL` in `.env` (an open editor / file-sync) so loader runs stop hitting it.
+
+---
+
 # Handoff (Sprint 3 / Phase 4): Hub MCP over the dispatch semantic/metric layer
 Date: 2026-06-21
 Session type: Build (governed read MCP server authored in-repo; identity-propagation + parity proven live)
