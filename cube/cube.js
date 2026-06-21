@@ -75,4 +75,23 @@ module.exports = {
     });
     return query;
   },
+
+  // SQL API auth (Steep / BI tools). Cube's SQL API speaks the Postgres wire protocol; BI tools
+  // connect HERE — not to Supabase directly — so they consume the governed `dispatch` view + the
+  // RLS/baked-in filters. This BI connection runs as an INTERNAL (unscoped) analytics context:
+  // without it, the queryRewrite above sees no app_metadata and fails closed (0 rows). Credentials
+  // come from env (CUBEJS_SQL_USER / CUBEJS_SQL_PASSWORD), never code. Treat them as an internal
+  // service credential — anyone holding them sees all consignors (appropriate for internal BI).
+  checkSqlAuth: async (query, user) => {
+    const expectedUser = process.env.CUBEJS_SQL_USER;
+    const expectedPassword = process.env.CUBEJS_SQL_PASSWORD;
+    if (!expectedUser || !expectedPassword || user !== expectedUser) {
+      throw new Error('Invalid SQL API user');
+    }
+    // Cube compares the client-supplied password to the returned `password`.
+    return {
+      password: expectedPassword,
+      securityContext: { app_metadata: { is_internal: true } },
+    };
+  },
 };

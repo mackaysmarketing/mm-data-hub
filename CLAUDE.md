@@ -60,6 +60,11 @@ Full per-metric contracts: `cube/CONTRACTS.md`.
 - **DB access:** the least-privilege `cube_readonly` role (migrations `0011`/`0012`) — SELECT on
   raw/core/semantic only, all-rows read via a permissive policy, no public/auth/storage, no writes.
   Connection via env var (`CUBE_DB_URL` / Cube Cloud data source), never in code.
+- **Consumers connect to Cube, never to Postgres.** Steep uses the native Cube integration (REST
+  API URL + `CUBEJS_API_SECRET` + security context `{app_metadata:{is_internal:true}}` for internal
+  BI). Postgres-wire BI tools use Cube's **SQL API**, authenticated by `checkSqlAuth` in `cube.js`
+  (`CUBEJS_SQL_USER`/`CUBEJS_SQL_PASSWORD`), also mapped to an internal context. Pointing a BI tool
+  straight at Supabase bypasses the governed metrics + RLS — don't.
 - **Proofs (runnable):** `npm run cube:reconcile` (parity vs raw SQL) · `npm run cube:rls`
   (three-context isolation). Deploy: `cd cube && npx cubejs-cli deploy --token <…>`.
 

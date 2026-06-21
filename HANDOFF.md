@@ -47,22 +47,32 @@ All Sprint-2 acceptance criteria met **with evidence** against the live deployme
 3. Order-type split: `S`=5,621 / `B`=305 — the 305 Buy loads (and their 474 pallets) are excluded
    by the baked Sell filter (38,796 total pallets → 38,322 dispatched Sell pallets).
 
-## Two open decisions for next sprint
-1. **Cube production deployment target** — currently the Cube Cloud dev deployment "MM Data Hub"
+## Open decision for next sprint
+1. **Cube production deployment target** — currently the Cube Cloud deployment "MM Data Hub"
    (dev-mode proof, sufficient for this sprint). Choose Cube Cloud (dedicated) vs self-host on
-   Railway before Steep/MCP depend on it. *Not decided here, by SPRINT scope.*
-2. **Steep wiring** — connect Steep to Cube once the deployment target is fixed. Bundled with this:
-   **repoint Cube Cloud's data source** from its current (superuser/bypassing) role to
-   `cube_readonly` (creds in `.env` `CUBE_DB_URL`; Supavisor session pooler accepts the custom role).
+   Railway as usage grows. *Not decided here, by SPRINT scope.*
+
+## Operationalized after the build (2026-06-21)
+- **Data source repointed to `cube_readonly`** — verified live: `pg_stat_activity` showed Cube's
+  sessions under `cube_readonly` (not the superuser), and the RLS re-proof stayed 12/12 through it.
+- **Steep wired** to the governed `dispatch` view via Steep's native **Cube integration** (REST API
+  URL + `CUBEJS_API_SECRET` + security context `{app_metadata:{is_internal:true}}` — internal/
+  unscoped, correct for internal BI). All 6 metrics imported with their CONTRACT descriptions.
+  Verified end-to-end via the Steep MCP: `load_count`=5621, `pallet_count`=38322,
+  `net_weight_dispatched`=27,822,146 — matching the raw baselines.
+- **`cube.js` gained `checkSqlAuth`** so BI tools using Cube's **SQL API** (Postgres-wire) get an
+  internal security context (else queryRewrite fails closed → 0 rows). Steep uses the REST path, so
+  this is available-but-unused; to enable it, set `CUBEJS_SQL_USER`/`CUBEJS_SQL_PASSWORD` env vars.
+- **Hygiene still TODO:** rotate the CLI deploy token + `CUBEJS_API_SECRET` (shared in chat); then
+  update Steep's integration + `.env` (and re-run `cube:rls`/`cube:reconcile` to confirm).
 
 ## Test status
 - `npm run typecheck` clean · `npm test` **16/16** · `npm run cube:rls` **12/12** ·
   `npm run cube:reconcile` **336/336** (exit 0).
 
 ## Known issues / notes
-- **Data source still on the old role.** The Cube Cloud data source currently uses the original
-  (superuser/bypassing) role — that's why first queries returned full data. Repoint to
-  `cube_readonly` is the follow-up above; the model + proofs already use it for the SQL side.
+- **Data source now on `cube_readonly`** (repointed + verified live 2026-06-21 — see
+  "Operationalized" above). The original superuser role is no longer used by Cube.
 - **CLI-deploy dependency.** `cube/package.json` depends on `@cubejs-backend/server-core` — needed
   ONLY by the `cubejs-cli deploy` bundler. `cube/node_modules` is gitignored; `cube/package-lock.json`
   pins it.
@@ -80,9 +90,9 @@ All Sprint-2 acceptance criteria met **with evidence** against the live deployme
 - `reports/reconciliation_cube_2026-06-20.md`, `reports/rls_proof_cube_2026-06-21.txt`
 
 ## Exact next step
-Repoint the Cube Cloud data source to `cube_readonly`, then wire Steep to the `dispatch` view
-(decide the production deployment target first). GP/settlement metrics remain Phase 2
-(blocked on read-replica creds).
+Decide the Cube production deployment target (Cube Cloud dedicated vs Railway), then rotate the
+chat-shared secrets (CLI deploy token + `CUBEJS_API_SECRET`) and update Steep + `.env`.
+GP/settlement metrics remain Phase 2 (blocked on read-replica creds).
 
 ---
 
