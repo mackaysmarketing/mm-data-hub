@@ -1,92 +1,90 @@
-# Sprint 2: Cube semantic layer over the dispatch model
-Date: 2026-06-20
+# Sprint 3 (Phase 4): Hub MCP over the semantic/metric layer
+Date: 2026-06-21
 Repo: mackaysmarketing/mm-data-hub
 
-> Numbering note: this is the **Cube** phase (Phase 3 in SPEC), pulled ahead of the
-> GP/settlement phase (Phase 2) because GP/settlement is still blocked on the FreshTrack
-> vendor enabling read-replica credentials. Build sequence ≠ spec phase number.
+> Numbering note: this is the **Hub MCP** phase (Phase 4 in SPEC), pulled ahead of the GP/settlement
+> phase (Phase 2) because Phase 2 is still blocked on FreshTrack enabling read-replica credentials
+> (`readonlyDatabaseCredentials` returns null for our account). Build sequence ≠ spec phase number.
 
 ## Orient first (read before assuming any names)
-- Read `SPEC.md` (semantic-layer + metrics sections, and §9 data-quality constraints),
-  `CLAUDE.md` (including the Git & pushing note), the `raw`/`core`/`semantic` migrations,
-  and the `semantic.grower_dispatch_detail` view. **Build to the real schema — do not invent
-  column or table names.**
-- Sprint 1 already landed FY25–26 dispatch (`raw` → `core` → `semantic`) with consignor-based
-  RLS on the grower dispatch view. This sprint adds the **metric layer** on top. No new ingestion.
+- Read `HANDOFF.md` (the Sprint-2/Cube handoff at the top = what's LIVE, and the Sprint-1 handoff
+  below), `SPEC.md` (§2 decisions, §4–5 semantic layer + MCP tool surface + output shape, §7 access
+  model: tenant scope + `can_view_sales` + global tier, §9 data-quality constraints), and `CLAUDE.md`
+  (schema-ownership boundary, the `app_metadata` RLS claim contract, the Cube section). Read
+  `cube/CONTRACTS.md` and the `/cube` model.
+- **Build to what's LIVE — do not invent names.** Sprint 2 shipped the Cube `dispatch` view + its 6
+  governed metrics (deployed to Cube Cloud "MM Data Hub"; parity 347/347, RLS 12/12), the
+  `cube_readonly` role (migrations `0011`/`0012`), and `semantic.grower_dispatch_detail` (the RLS
+  view; migrations `0008`/`0010`). The MCP **consumes** these — it does not redefine metrics.
 
 ## Scope
-Stand up a Cube project inside this repo as the single, code-defined metric surface over the
-dispatch data landed in Sprint 1. Cube reads the hub Postgres and defines the dispatch measures
-and dimensions **once**, so both Steep and the future Hub MCP consume the same governed
-definitions — Steep consumes Cube, it does not define metrics. Tenant RLS carries through: a
-grower security context returns only that consignor's rows, identical to the Sprint 1 semantic
-view. This sprint is the aggregate/BI surface only; it does **not** replace the portal's
-row-level dispatch list (that is the `semantic.grower_dispatch_detail` view, already shipped).
+Stand up the **Hub MCP**: one governed MCP server (TypeScript, `@modelcontextprotocol/sdk`, ESM,
+Node ≥22) exposing the dispatch semantic/metric layer through a small **READ** tool surface, with
+**identity-propagating RLS** — the MCP holds no standing elevated access; every call runs scoped to
+the caller (`consignor_id` / `is_internal`). This is the agent/SQL access substrate from SPEC §1/§5.
+Agents on top of the MCP, sales tools, and write/action tools are out of scope (Phase 2 GP data
+isn't landed; writes need the separate audited action surface).
 
 ## Acceptance Criteria
-- [ ] Cube project scaffolded in-repo (e.g. `/cube`), data models as code, connected to the hub
-      Postgres via a **read-only** role; runs in Cube dev mode / Playground against the live
-      landed data.
-- [ ] Dispatch cube(s) defined over the existing `core`/`semantic` model with these **measures**:
-      `net_weight_dispatched`, `load_count`, `pallet_count`, `line_count`.
-- [ ] **Dimensions**: grower/consignor, `pack_week` (parsed from `extra_text_2`, format `Y{YY}W{WW}`),
-      produce type, consignee/customer DC, dispatch date (`actual_pickup_on`).
-- [ ] **Baked-in filters every consumer inherits**: `*TEST` consignors excluded; `order_type`
-      filtered to **Sell** (sales dispatches only). Encode once at the cube, not per query.
-- [ ] **Null integrity**: `net_weight` nulls stay null in measures — never coalesced or summed
-      as 0. Produce-level capture rates reproduce against raw (papaya ~100%, banana ~88%,
-      avocado ~41% — avocados sell by count, so null = unknown, not zero).
-- [ ] **Metric parity**: each measure reconciles to a direct SQL aggregate over the landed data
-      within agreed tolerance — net weight and load/pallet/line counts **by grower** and **by
-      pack-week** match a raw aggregate; log any variance, don't hide it.
-- [ ] **RLS in Cube**: a security context injects `consignor_id` (via `queryRewrite` or
-      equivalent) so every dispatch query is row-filtered. Prove with **two distinct grower
-      contexts** (each sees only its own rows) **plus one internal/unscoped context** (sees all).
-      Same claim contract as Sprint 1: grower auth → `consignor_id`. No dimension selection can
-      widen a grower's scope.
-- [ ] `pallet.location_id` and harvest-load lineage are **not** modelled at dispatch
-      (`harvest_load_id` is null outbound). No measure sliceable below pallet/line grain.
-- [ ] Each metric documented as a **contract**: single meaning (which column summed), grain,
-      baked-in filters, allowed dimensions. Additive only — adding metrics is fine; redefining an
-      existing one is not.
+- [ ] MCP server scaffolded in-repo (e.g. `/mcp`), runnable, with documented startup + invocation.
+- [ ] **Read tools** over the LIVE layer: `get_catalog`, `list_metrics`, `get_definition`,
+      `list_dimension_values`, `query_metric` (Cube `dispatch` view — group_by, filters, time_range,
+      time_grain, order, limit), `list_grower_dispatches` (over `semantic.grower_dispatch_detail`),
+      `resolve_entity`, and `run_select` (escape hatch: **`semantic.*` only**, no DDL, row cap, timeout).
+- [ ] **Consumes the governed Cube metrics** — `query_metric`/`list_metrics`/`get_catalog` read the
+      Cube catalog; metric/dimension names are registry-validated and unknowns rejected. No metric is
+      redefined in the MCP.
+- [ ] **Identity-propagating RLS (hard blocker):** caller identity is an explicit per-request input,
+      never hardcoded/elevated. Metric tools sign a per-caller Cube JWT (`app_metadata.consignor_id` /
+      `is_internal`) → Cube `queryRewrite` scopes it. Detail / `run_select` tools apply the caller's
+      JWT claims so `semantic.*` Postgres RLS applies. Neither path bypasses RLS.
+- [ ] **Output shape** on every read: `{ columns, rows, metric_definition, filters_applied,
+      row_count, truncated }` (SPEC §5).
+- [ ] **Fail closed:** absent/malformed identity → no rows; no tool argument, filter, group_by, or
+      `run_select` escape can widen a grower's scope.
+- [ ] Guardrails: `run_select` rejects non-`semantic.*` and any DDL/DML; every read enforces a row
+      cap + statement timeout.
 
 ## Definition of Done
-- [ ] All acceptance criteria checked with evidence (Cube query output vs SQL reconciliation
-      report; three-context RLS proof).
-- [ ] Parity + RLS checks committed as runnable scripts and passing.
-- [ ] No TypeScript errors (Cube schema files clean).
-- [ ] `CLAUDE.md` updated: Cube lives in this repo; the metric-contract / add-never-change rule;
-      the security-context → `consignor_id` RLS pattern.
-- [ ] `HANDOFF.md` updated: measures shipped, reconciliation deltas, and the two open decisions
-      left for next sprint (Cube deployment target, Steep wiring).
-- [ ] Committed and pushed to `mackaysmarketing/mm-data-hub` using the token-direct URL method.
-      Use a **fresh fine-grained token** scoped to mm-data-hub only (Contents: read/write),
-      short-lived — **not** the one revoked after Sprint 1.
+- [ ] All acceptance criteria checked **with evidence**.
+- [ ] **RLS-propagation proof** (runnable script + captured output): `query_metric` (pallet_count)
+      and `list_grower_dispatches` under **≥2 grower contexts + 1 internal** — each grower sees only
+      its own rows, internal sees all, no-claim → 0, and an attempt to widen scope via a tool argument
+      stays scoped. Plus the `app_metadata`-only / forged-claim rejection (parity with Sprint 2's RLS
+      proof).
+- [ ] **Parity check:** `query_metric` via the MCP matches the Cube/raw baselines (internal
+      `pallet_count` = 38322; grower A's scoped total = its Cube-filtered total).
+- [ ] `npm run typecheck` clean; `npm test` green — incl. unit tests for registry validation,
+      output-shape, and fail-closed behaviour.
+- [ ] No Sprint-2 regression: `npm run cube:rls` and `npm run cube:reconcile` still pass.
+- [ ] `CLAUDE.md` updated (Hub MCP exists; the identity-propagation pattern). `HANDOFF.md` updated
+      (tools shipped, the identity mechanism chosen, what's deferred to Phase 2).
+- [ ] Committed + pushed to `mackaysmarketing/mm-data-hub` via the token-direct URL method (never gh).
+      Use the same fine-grained PAT as the prior session, or a fresh one (Contents: read/write,
+      mm-data-hub only).
 
-## Quality Rubric (mm-data-hub — semantic/Cube)
+## Quality Rubric (mm-data-hub — Hub MCP)
 | Criterion | What to check |
 |-----------|--------------|
-| **Metric parity** | Every measure reconciles to direct SQL within tolerance; variances logged, not silently absorbed. |
-| **RLS propagation** | Grower security context returns only that consignor's rows; proven under ≥2 grower + 1 internal context. No dimension or filter selection widens scope. |
-| **Null integrity** | `net_weight` nulls never coalesced to 0 in any measure; produce capture rates reproduce. |
-| **Contract discipline** | Each metric has one meaning/grain/baked-in-filter set/allowed dimensions; no redefinition of an existing metric. |
-| **Grain safety** | No load-grain measure exposed below pallet/line grain. |
-| **FreshTrack §9 constraints** | `*TEST` excluded; `order_type = Sell` applied; `location_id` and harvest-load lineage not modelled at dispatch. |
-| **Secrets / connection** | DB connection via env var on a read-only role; no credentials in code. |
+| **Identity propagation** | Every tool runs as the caller; no standing service_role/superuser in the query path. Proven under ≥2 grower + 1 internal. |
+| **No scope widening** | No tool argument, filter, group_by, or `run_select` escape returns another consignor's rows. Fail-closed on absent/malformed identity. |
+| **Governed consumption** | Metrics consumed from Cube, never redefined; names registry-validated; output carries `metric_definition` + `filters_applied`. |
+| **Escape-hatch safety** | `run_select` = `semantic.*` only, no DDL/DML, row cap + timeout. |
+| **Grain / null integrity** | Inherited from the Cube/semantic layer — the MCP adds no coalescing and no sub-pallet/line grain. |
+| **Scope discipline** | Sales + write/action tools deferred/stubbed, not faked. |
+| **Secrets / least privilege** | Cube secret + DB creds via env, never in code; read-mostly, least-privilege role. |
 
-**Threshold:** Metric parity and RLS propagation are hard blockers. Pass 6/7 overall.
+**Threshold:** Identity propagation and No-scope-widening are hard blockers. Pass 6/7 overall.
 
 ## Out of Scope
-- GP/settlement metrics (invoiced / paid / remitted dollars) — Phase 2, blocked on read-replica creds.
-- Wiring Steep to Cube — separate step once Cube is deployed somewhere reachable.
-- Cube production deployment / hosting choice (Cube Cloud vs self-host on Railway) — **flag the
-  decision in HANDOFF, don't make it here**; dev-mode proof is sufficient for this sprint.
-- Hub MCP, agents, action tools — Phase 4.
-- The grower dispatch list — already shipped as the `semantic.grower_dispatch_detail` view; Cube
-  does not replace it.
-- NetSuite, retail scan, pricing sources.
+- `list_grower_sales`, `raise_rcti`, any settlement/GP tools — Phase 2 (blocked on read-replica).
+  Stub with a clear "unavailable until Phase 2" guard; do not fake.
+- Write/action tools (`create_grower`, `update_grower_contact`, `send_grower_notice`) — need the
+  separate audited surface with human confirmation for irreversible actions; defer. No unguarded writes.
+- Agents / LLM orchestration on top of the MCP (later phase).
+- Any change to the Cube metric definitions (additive-only; not this sprint).
 
 ## First step
-Read `SPEC.md`, `CLAUDE.md`, the migrations and the `semantic.grower_dispatch_detail` view to
-confirm real names, then scaffold the Cube project against the hub Postgres and define the
-dispatch cube from the existing model.
+Read the docs above, confirm the live Cube view + semantic view names and that `.env` Cube creds are
+current, decide and **STATE** the identity-propagation mechanism (how caller identity reaches the
+MCP), then acknowledge scope + acceptance criteria before building.
