@@ -19,9 +19,12 @@
     "schema:diff": "node --experimental-strip-types src/schemaDiff.ts",
     "schema:snapshot": "node --experimental-strip-types src/schemaDiff.ts --init",
     "cube:rls": "node --experimental-strip-types scripts/cube_rls_proof.ts",
-    "cube:reconcile": "node --experimental-strip-types scripts/cube_reconcile.ts"
+    "cube:reconcile": "node --experimental-strip-types scripts/cube_reconcile.ts",
+    "mcp:server": "node --experimental-strip-types mcp/server.ts",
+    "mcp:proof": "node --experimental-strip-types scripts/mcp_proof.ts"
   },
   "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
     "dotenv": "^16.4.7",
     "pg": "^8.13.1"
   },

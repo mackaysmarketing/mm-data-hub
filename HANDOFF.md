@@ -1,3 +1,98 @@
+# Handoff (Sprint 3 / Phase 4): Hub MCP over the dispatch semantic/metric layer
+Date: 2026-06-21
+Session type: Build (governed read MCP server authored in-repo; identity-propagation + parity proven live)
+
+## What was completed
+All Sprint-3 acceptance criteria met **with evidence** against the LIVE layer (Cube `dispatch`
+view + `semantic.grower_dispatch_detail`, project `data_hub` / `uqzfkhsdyeokwnkpcxui`).
+
+- **MCP server in-repo** at `/mcp` — TypeScript (`@modelcontextprotocol/sdk` 1.29, stdio, ESM, run
+  via `--experimental-strip-types`). Start: `npm run mcp:server`; docs in `mcp/README.md`.
+  Modules: `config`, `errors`, `identity`, `output`, `cube`, `db`, `registry`, `runSelect`,
+  `tools`, `deps`, `server`.
+- **Read tools over the LIVE layer:** `get_catalog`, `list_metrics`, `get_definition`,
+  `list_dimension_values`, `query_metric` (Cube `dispatch` — group_by / filters / time_range /
+  time_grain / order / limit), `list_grower_dispatches` (`semantic.grower_dispatch_detail`),
+  `resolve_entity`, `run_select` (escape hatch). Every read returns the SPEC §5 shape
+  `{ columns, rows, metric_definition, filters_applied, row_count, truncated }`. Metric/dimension
+  names are **registry-validated against the Cube `/meta` catalog** — unknowns rejected. No metric
+  is redefined in the MCP.
+- **THE IDENTITY-PROPAGATION MECHANISM chosen (and proven):** the MCP holds **no standing elevated
+  access**. Caller identity enters once from a trusted channel — `HUB_MCP_CALLER_TOKEN`, a signed
+  HS256 JWT carrying **`app_metadata`** (verified into a fixed session identity; read
+  app_metadata-ONLY, so a forged top-level claim is ignored, same as migration `0010`). No tool
+  argument can assert/widen it. Two paths:
+  - **Metric** → signs a short-lived **per-caller Cube JWT** and calls Cube REST `/load`; Cube
+    `queryRewrite` scopes it.
+  - **Detail / run_select** → new least-privilege role **`hub_mcp`** (migration `0013`:
+    `NOINHERIT`, member of `authenticated` ONLY, no standing data access) connects and, per request,
+    `SET ROLE authenticated` + `SET request.jwt.claims` (the caller) so Postgres RLS (`0008`/`0010`)
+    scopes the row. Read-only (every request rolls back).
+  - **Fail closed** is structural: no/invalid claims ⇒ `authenticated` sees 0 rows.
+- **RLS-propagation + parity proof — 25/25** (`npm run mcp:proof`,
+  `reports/mcp_proof_2026-06-21.txt`), driving the REAL handlers under 5 contexts:
+  - metric `pallet_count`: **internal 38322 · A(MMLAR) 13186 · B(MMTRU) 7631 · no-claim 0 ·
+    forged-top-level 0**; `A == internal-filtered-to-A`; A→B filter = 0; A group_by grower_key =
+    {A} only.
+  - detail `count(*)`: **internal 38796 · A 13281 · B 7631 · no-claim 0 · forged 0**;
+    `list_grower_dispatches` A sees only A, internal sees many, no-claim 0 rows, A passing
+    `grower=B` still 0 (no widening).
+  - governed output shape on every read; registry rejects unknown metric/dimension; `run_select`
+    rejects non-`semantic.*`, DML, and multi-statement.
+  - **Parity baselines match** exactly: internal `pallet_count` = 38322 (= Cube/raw); grower A
+    scoped `pallet_count` = 13186 (its Cube-filtered total).
+- **Guardrails:** `run_select` = single read-only SELECT, `semantic.*` only, no DDL/DML, row cap
+  (`MAX_ROWS=5000`) + statement timeout (15 s). Defense in depth: it runs as `authenticated`, which
+  has SELECT on `semantic.grower_dispatch_detail` ONLY and is fully RLS-scoped.
+
+## Why the two surfaces differ (logged, not hidden)
+`query_metric pallet_count` for grower A = **13186** but `list_grower_dispatches` / detail rows for
+A = **13281**. Intentional: the Cube view bakes `order_type='S'` (Sell-only); the detail view
+(`semantic.grower_dispatch_detail`, migration 0008) bakes only `dispatched + non-test` and so
+includes the 95 Buy pallets. Each surface is proven against its OWN baseline — never conflated.
+
+## Test status
+- `npm run typecheck` clean · `npm test` **30/30** (15 new MCP unit tests: identity/app_metadata
+  contract, registry validation, output shape, run_select guard, handler validation with injected
+  fakes — no live deps) · `npm run mcp:proof` **25/25** (exit 0).
+- **No Sprint-2 regression:** `npm run cube:reconcile` **347/347** · `npm run cube:rls` **12/12**.
+
+## What is NOT done (deferred — stubbed, not faked)
+- `list_grower_sales` + all settlement/GP tools → **Phase 2** (FreshTrack read-replica still
+  blocked: `readonlyDatabaseCredentials` returns null). Registered as a guarded stub that throws
+  `UnavailableError` ("unavailable until Phase 2").
+- Write/action tools (`create_grower`, `update_grower_contact`, `raise_rcti`, `send_grower_notice`)
+  — **not registered** in this read server; they belong to a separate audited action surface with
+  human confirmation for irreversible actions.
+- Agents on top of the MCP (SPEC §10) — later phase; the MCP is the substrate.
+
+## Known issues / notes
+- **`hub_mcp` password set out-of-band** (`ALTER ROLE … PASSWORD`, not committed) and stored in the
+  gitignored `.env` as `MCP_DB_URL`. To run the detail path / `mcp:proof` on another machine, set
+  it the same way (or rotate). `.env.example` documents both.
+- **Identity ingress for stdio** is the env-provided signed token (`HUB_MCP_CALLER_TOKEN`). A future
+  HTTP transport would carry it per-connection; the in-process handler boundary (`(args, identity,
+  deps)`) already isolates identity from tool arguments, which is what the proof exercises.
+- **Secret hygiene carried over from Sprint 2:** the CLI deploy token + `CUBEJS_API_SECRET` were
+  chat-shared; rotating them remains TODO (would require re-running `mcp:proof` + the cube proofs
+  with the new `CUBE_API_SECRET`).
+
+## Files changed (Sprint 3 / Phase 4)
+- `mcp/{config,errors,identity,output,cube,db,registry,runSelect,tools,deps,server}.ts`, `mcp/README.md`
+- `supabase/migrations/0013_hub_mcp_role.sql`
+- `scripts/mcp_proof.ts`, `tests/mcp.test.ts`
+- `package.json` (`@modelcontextprotocol/sdk` dep + `mcp:server`/`mcp:proof` scripts),
+  `tsconfig.json` (`mcp/**`), `.env.example`, `CLAUDE.md`, `HANDOFF.md`
+- `reports/mcp_proof_2026-06-21.txt`
+
+## Exact next step
+Phase 2 (GP/settlement) when the read-replica unblocks: land `gp_schedule`/`gp_detail`, add the
+sales Cube metrics (additive-only), then slot `list_grower_sales` into the MCP behind the
+`can_view_sales` capability (already threaded through `CallerIdentity`). Separately: stand up the
+audited write/action surface, and rotate the chat-shared Cube secrets.
+
+---
+
 # Handoff (Sprint 2): Cube semantic layer over the dispatch model
 Date: 2026-06-21
 Session type: Build (Cube project authored in-repo + deployed live to Cube Cloud; parity + RLS proven)

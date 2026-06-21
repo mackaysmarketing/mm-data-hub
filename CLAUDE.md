@@ -68,6 +68,33 @@ Full per-metric contracts: `cube/CONTRACTS.md`.
 - **Proofs (runnable):** `npm run cube:reconcile` (parity vs raw SQL) · `npm run cube:rls`
   (three-context isolation). Deploy: `cd cube && npx cubejs-cli deploy --token <…>`.
 
+## Hub MCP (Phase 4) — lives in THIS repo (`/mcp`)
+One governed **read** MCP server (`@modelcontextprotocol/sdk`, stdio, ESM) over what's LIVE: the
+Cube `dispatch` view + `semantic.grower_dispatch_detail`. It **consumes** the governed metrics —
+never redefines one. Full surface + run docs: `mcp/README.md`. Start: `npm run mcp:server`.
+- **Identity-propagating RLS is the central invariant.** The MCP holds **no standing elevated
+  access**. Caller identity (`consignor_id` / `is_internal`) enters once from a trusted channel
+  (`HUB_MCP_CALLER_TOKEN`, a signed JWT carrying **`app_metadata`**), read app_metadata-ONLY — a
+  forged top-level claim is ignored (same contract as migration `0010`). **No tool argument,
+  filter, group_by, or `run_select` string can assert or widen scope.** Absent/invalid identity →
+  **fail closed** (0 rows).
+  - **Metric path** (`query_metric`, catalog tools) → signs a short-lived **per-caller Cube JWT**
+    and calls Cube REST `/load`; Cube `queryRewrite` scopes it.
+  - **Detail path** (`list_grower_dispatches`, `run_select`) → connects as the least-privilege
+    **`hub_mcp`** role (migration `0013`: `NOINHERIT`, member of `authenticated` ONLY, no standing
+    data access) and per request does `SET ROLE authenticated` + `SET request.jwt.claims` (the
+    caller) so Postgres RLS (`0008`/`0010`) scopes the row. Read-only (always rolls back).
+- **Every read returns** `{ columns, rows, metric_definition, filters_applied, row_count,
+  truncated }` (SPEC §5). Metric/dimension names are **registry-validated** against the Cube
+  catalog (unknowns rejected). `run_select` = `semantic.*` only, no DDL/DML, single statement, row
+  cap + statement timeout.
+- **Deferred, stubbed (not faked):** `list_grower_sales`/settlement → Phase 2 (read-replica
+  blocked). Write/action tools are NOT in this read server — they need the separate audited action
+  surface (human confirmation for irreversible actions).
+- **Proof (runnable):** `npm run mcp:proof` — identity propagation + parity across internal + 2
+  growers + no-claim + forged, both paths (`reports/mcp_proof_<date>.txt`). Secrets via env
+  (`CUBE_API_SECRET`, `MCP_DB_URL`), never in code.
+
 ## Stack
 - TypeScript (ESM, Node ≥ 22 — run `.ts` directly via `--experimental-strip-types`).
 - Supabase Postgres 17 (`data_hub`). Loaders write via `pg` (direct), never PostgREST.
