@@ -133,6 +133,57 @@ can't give). Same medallion + RLS contract as FreshTrack dispatch.
   `npm run ns:rls` (3 contexts + fail-closed + forgery) · `npm run ns:parity` (hub ↔ live NetSuite) ·
   `npm run cube:settlement` (live Cube metrics + RLS, after deploy).
 
+## FreshTrack GP settlement (Sprint 6) — GP schedules land in THIS repo (`raw.ft_gp_*`/`ft_charge*` → `core` → `semantic`)
+The **third source** and the **second view of grower settlement** (NetSuite RCTIs are the accounting
+mirror). Its unique value over NetSuite is **load-grain lineage**: every settlement line carries
+`dispatch_load_id`, so settlement joins back to dispatch. Landed via FreshTrack's **direct Postgres
+read-replica** (the first non-GraphQL ingress). Same medallion + `app_metadata` RLS contract.
+- **READ-ONLY out of the replica — never write.** `FRESHTRACK_DATABASE_URL`, role
+  `cloud_mackaysmarketing_readonly`; the session pins `default_transaction_read_only`. Connector
+  `src/lib/freshtrack_db.ts`. Probes: `ft:db:smoke`/`explore`/`gp-profile`/`charge-profile`.
+- **THE DEDUCTION MODEL = `charge_applied`** (the normalized ledger), NOT `gp_detail.extra_*`.
+  Settlement scope = **`charge_applied.gp_schedule_id IS NOT NULL`** (the ~24k null-schedule rows are
+  unsettled; excluded). Dims: `charge` (rate card) + `charge_type` (`scope`, `account_code`) + `gp_status`
+  (PA/PD/DR). Migration `0018` (raw), `0019` (core), `0020` (semantic). Loader `src/loaders/ft_gp.ts`:
+  full backfill / **incremental by `last_modified_on`** (`-- --since=YYYY-MM-DD`) / slice; idempotent
+  (upsert on `id`), resumable via `raw.sync_window`. Then `npm run ft:gp:core`.
+- **Net = gross − deductions − GST** (validated live: 97% of paid schedules within 1% of `gp_payment`).
+  `gross = Σ gp_detail.box_quantity × price_invoiced_value`; `deductions = Σ charge_applied
+  (is_deductible)` by category; `GST` from `vat_info` (**`EX`→×0.10, `INC`→×1/11, `FREE`→0**, matching
+  FreshTrack's own `public.v_power_bi_charge_split`). **Anchored on `gp_payment`** (the cash); the
+  **original-load split apportionment is NOT replicated** (`quantity_value/text_2` explodes; the residual
+  is surfaced, not hidden). **`gp_schedule.invoiced_amount_value` is UNRELIABLE** ($33M vs true gross
+  $177M) — do not anchor on it.
+- **Charge taxonomy (`core.dim_gp_charge`, classifier `src/lib/ft_gp_charges.ts`):** `charge_applied.account_code`
+  first digit is PRIMARY — `1` FR · `2` WH · `3` MD · `4` MI · `5` LA — with `charge_type.scope`/`charge.name`
+  as fallback (messy: `'WH  - Handling'`, `'MD- Levy'`, null scope). **⚠ GP `LA` = "Load Adjustment"
+  (account 5xxxxx), NOT NetSuite's LA = Larapinta** — shared code, different meaning, documented.
+  Unknown → OTHER (surfaced; currently $0). ~5k applied rows carry **no `charge_id` but DO carry
+  `account_code`** → classify by the LINE account_code (dim is the fallback).
+- **Grower crosswalk — DETERMINISTIC: `gp_schedule.consignor_id` = `core.dim_grower.consignor_id`** (no
+  code-matching, unlike NetSuite). **RLS anchors on the SCHEDULE consignor** (`core.crosswalk_gp_grower`),
+  **NOT `gp_detail.consignor_id`** — which can be the ORIGINAL grower on a reconsigned load (the 45-vs-35
+  gap; 10 detail-only originals surfaced, never settled). Source quirks **surfaced, not dropped**: 52
+  schedules with null consignor (internal-only via RLS), 48 with no `gp_payment` row (null paid_date,
+  flagged, never zero-dated).
+- **Facts:** `core.fact_gp_settlement` (schedule grain) + `core.fact_gp_settlement_load` (**load grain**
+  via `dispatch_load_id` — the lineage NetSuite cannot provide). Deduction/GST columns signed; `net =
+  gross + deductions + gst`. **`netsuite_id` is UNUSABLE** as a cross-source key (2/155 charges, 0/30
+  charge_types populated) → cross-source join is by **grower (`consignor_id`) + the shared FR/WH/MD
+  taxonomy**, not `charge.netsuite_id`.
+- **`semantic.grower_gp_settlement`** (schedule) **+ `semantic.grower_gp_settlement_load`** (load) —
+  `security_invoker`; RLS by **schedule `consignor_id`** via the **same `app_metadata`-only, fail-closed**
+  helpers as `0008`/`0010`/`0016`; `cube_readonly` read-all (mirror `0012`). **Paid date first-class.**
+  **Cube GP metrics are ADDED** (`gp_settlement` + `gp_settlement_load` views, `gp_*` measures), never
+  redefining a dispatch/NetSuite-settlement metric; `cube.js` `queryRewrite` scopes both with the
+  identical contract.
+- **Proofs (runnable):** `npm run ft:gp:reconcile` (TS-oracle drift guard + cash recon to `gp_payment` +
+  PBI/NetSuite anchors) · `npm run ft:gp:parity` (cross-source GP↔NetSuite per grower; grand net 0.6%,
+  deductions 0.1%) · `npm run ft:gp:rls` (both views × 5 contexts) · `npm run cube:gp` (live Cube, after
+  deploy). **Cross-source ties:** GP paid **$140.5M** ≈ NetSuite net **$139.7M**; GP deductions
+  **$32.53M** ≈ NetSuite **$32.50M**. Per-grower differences = GP's finer consignor granularity (AG*
+  sub-entities + null-consignor aggregates NetSuite rolls into vendor RCTIs) — surfaced, accounting closes.
+
 ## Stack
 - TypeScript (ESM, Node ≥ 22 — run `.ts` directly via `--experimental-strip-types`).
 - Supabase Postgres 17 (`data_hub`). Loaders write via `pg` (direct), never PostgREST.

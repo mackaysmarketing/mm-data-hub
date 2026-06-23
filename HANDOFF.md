@@ -1,3 +1,94 @@
+# Handoff (Sprint 6 BUILD): FreshTrack GP settlement — load-grain settlement + cross-source reconcile
+Date: 2026-06-23
+Session type: Build (GP settlement onboarded as the 3rd source / 2nd settlement view; raw→core→semantic→Cube; RLS + internal + cross-source reconciliation proven live)
+
+## What was completed
+All SPRINT.md acceptance criteria met **with evidence** against the live hub (`data_hub` /
+`uqzfkhsdyeokwnkpcxui`), EXCEPT the live Cube `gp_settlement` deploy (operator-gated — no deploy token
+in this environment; code complete + validated offline + cube:gp ready). Built FROM the Sprint-6 probe.
+
+- **Raw charge landing (migration `0018`):** `raw.ft_charge_applied` (the deduction ledger — all 36
+  source cols, no `_raw`), `raw.ft_charge` / `ft_charge_type` / `ft_gp_status` (curated + `_raw`).
+  Faithful native mirrors; text not enum; temporal via `::text`; amounts never coalesced.
+- **Loader generalized (`src/loaders/ft_gp.ts`):** full backfill / **incremental by `last_modified_on`**
+  (`-- --since=`) / slice. Keyset-paged from the replica (read-only, fetch-before-hub-connect),
+  idempotent (upsert on `id`), resumable per-stream via `raw.sync_window`. **Backfill landed: 1254
+  schedules · 23544 detail · 1257 payments · 93804 settled charges · 30+155+3 dims.** Idempotent
+  (incremental re-run left counts unchanged).
+- **Core (`migration 0019` + `src/loaders/ft_gp_core.ts`):** `core.dim_gp_charge` (TS-classifier built,
+  155 charges), `core.crosswalk_gp_grower` (deterministic; surfaces detail-only), `core.fact_gp_settlement`
+  (schedule grain, 1254) + `core.fact_gp_settlement_load` (**load grain via `dispatch_load_id`, 17975** —
+  the lineage NetSuite cannot give). Category by LINE `account_code` prefix + dim fallback.
+- **Semantic (`migration 0020`):** `semantic.grower_gp_settlement` + `semantic.grower_gp_settlement_load`,
+  `security_invoker`, RLS on the **SCHEDULE consignor** via the same `app_metadata`-only fail-closed
+  helpers as `0008`/`0010`/`0016`; `cube_readonly` read-all. Paid date first-class.
+- **Cube (additive):** `cube/model/cubes/gp_settlement_schedule.yml` + `gp_settlement_load.yml` → views
+  `gp_settlement` + `gp_settlement_load`; `gp_*` measures (never redefining a dispatch/NetSuite metric);
+  `cube.js` `queryRewrite` VIEW_GROWER_KEYS extended to scope both. **NOT yet deployed** (see Known issues).
+- **Unit tests (+16, 64 total):** charge classification (FR/WH/MD/MI/LA, GL-string fallback, LA=Load
+  Adjustment), GST `vat_info` math, settlement rollup oracle (incl. LA credits), crosswalk (reconsignment).
+
+## Decisions stated (per SPRINT first-step)
+- **Net computation = anchor-and-reconcile** (the recommended option). gross from `gp_detail`, deductions
+  from `charge_applied (is_deductible)`, GST from `vat_info`; reconciled to **`gp_payment`** + FreshTrack's
+  own `v_power_bi_charge_split`. **Original-load split apportionment NOT replicated** (`quantity_value/text_2`
+  explodes to $326M; even FreshTrack's PBI view doesn't perfectly tie reconsignment to payment) — residual
+  surfaced. `gp_schedule.invoiced_amount_value` is **unreliable** ($33M vs true gross $177M) — not anchored on.
+- **Incremental key = `last_modified_on`** (confirmed; an archive/lock/pay event bumps it).
+- **LA = "Load Adjustment"** in FreshTrack (account 5xxxxx) — shared code with NetSuite's LA=Larapinta but
+  different meaning; documented, labelled distinctly.
+- **`netsuite_id` is UNUSABLE** as the cross-source key (2/155 charges, 0/30 charge_types) → cross-source
+  join is by grower `consignor_id` + the shared FR/WH/MD taxonomy. (Corrects the SPRINT's assumed key.)
+
+## Evidence (runnable)
+- `npm run ft:gp:reconcile` — **A (TS oracle == SQL fact) PASS (0 drift)**; B (cash vs gp_payment)
+  **1170/1206 (97%) within 1%**; OTHER $0; null-consignor 52, no-payment 48 (surfaced). Grand: gross
+  **$176,615,800** − deductions **$32,532,268** − GST **$2,716,111**; paid **$140,543,825**.
+- `npm run ft:gp:parity` — **5/5**: grand net **0.60%**, grand deductions **−0.10%**; 22/26 growers within
+  10%; accounting closes (GP $141.37M = NS $139.70M + finer-granularity attribution); spot-check MACBO
+  net −4.8% (FR/WH/MD ~3%). Cross-source ties: GP paid **$140.5M** ≈ NS **$139.7M**; deductions
+  **$32.53M** ≈ NS **$32.50M**.
+- `npm run ft:gp:rls` — **14/14**: both views × {internal, 2 growers, no-claim→0, forged→0, no-widening},
+  anchored on the SCHEDULE consignor.
+- Crosswalk: **35/35** schedule consignors mapped; **10** detail-only (reconsignment) originals surfaced.
+
+## Test status
+- `npm run typecheck` clean · `npm test` **64/64** (+16 new).
+- **No regression:** `cube:rls` **12/12** · `cube:reconcile` **347/347** · `cube:settlement` **7/7** ·
+  `ns:reconcile` PASS · `ns:rls` **7/7** · `mcp:proof` **25/25** · `ns:parity` re-synced (see below).
+
+## What is NOT done (deferred / operator-gated — not faked)
+- **Cube `gp_settlement` live deploy + `cube:gp` live run** — no Cube Cloud deploy token in this
+  environment (carry-over of the Sprint-2/5 chat-shared-secret rotation). Models validated offline
+  (YAML + member cross-check + no f-string braces); `cube:gp` fails cleanly with "Cube 'gp_settlement'
+  not found" pre-deploy. **Deploy:** `cd cube && npx cubejs-cli deploy --token <…>`, then `npm run cube:gp`.
+- Original-load split apportionment (deliberately not replicated — see Decisions).
+- Merging GP + NetSuite into one canonical settlement (kept as two reconciled sources, per SPRINT).
+- Hub MCP / Steep surfacing of GP metrics (later phase; the Cube metrics are the substrate).
+
+## Known issues / notes
+- **`ns:parity` source drift:** live NetSuite gained **2 RCTIs** (1097 vs the hub's 1095, $12,494) since
+  the Sprint-5 backfill — NOT a Sprint-6 regression (spot-check still exact). Re-synced via incremental
+  `ns:backfill` + `ns:core` (data sync, no code change) → `ns:parity` **5/5** restored; `ft:gp:parity`
+  re-verified **5/5** against the current NetSuite (grand net 0.59%, deductions −0.10%).
+- **Reconsignment** is common (12,770 detail rows, 70k charge rows carry an original load). GP attributes
+  to the schedule consignor; NetSuite to the RCTI vendor → per-grower cross-source differences (grand ties).
+- **Cube deploy token + `CUBEJS_API_SECRET` rotation** still TODO (carried from Sprint 2/5).
+
+## Files changed (Sprint 6 build)
+- `supabase/migrations/{0018_raw_ft_gp_charges,0019_core_gp_settlement,0020_semantic_grower_gp_settlement}.sql`
+- `src/lib/{ft_gp_specs,ft_gp_charges,ft_gp_settlement,ft_gp_crosswalk}.ts`, `src/loaders/{ft_gp,ft_gp_core}.ts`
+- `cube/model/cubes/{gp_settlement_schedule,gp_settlement_load}.yml`, `cube/model/views/{gp_settlement,gp_settlement_load}.yml`, `cube/cube.js`
+- `scripts/{ft_db_charge_profile,ft_gp_reconcile,ft_gp_parity,ft_gp_settlement_rls_proof,cube_gp_settlement_check}.ts`
+- `tests/{ft_gp_charges,ft_gp_settlement,ft_gp_crosswalk}.test.ts`, `package.json`, `CLAUDE.md`, `HANDOFF.md`
+
+## Exact next step
+Deploy the Cube `gp_settlement` models (`cd cube && npx cubejs-cli deploy --token <…>`) and run
+`npm run cube:gp` to prove the live metrics + RLS; rotate the chat-shared Cube secrets. Then wire the GP
+metrics into Steep / the Hub MCP (`list_grower_sales` behind `can_view_sales`).
+
+---
+
 # Handoff (Sprint 6 kickoff): FreshTrack GP settlement — Phase-2 read-replica probe + sprint spec
 Date: 2026-06-23
 Session type: Discovery + scoping (read-replica access proven; GP raw landing applied + test-loaded; Sprint-6 spec written). NOT a full build.
