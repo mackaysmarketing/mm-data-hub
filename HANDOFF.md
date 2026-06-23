@@ -1,3 +1,56 @@
+# Handoff (Sprint 6 kickoff): FreshTrack GP settlement — Phase-2 read-replica probe + sprint spec
+Date: 2026-06-23
+Session type: Discovery + scoping (read-replica access proven; GP raw landing applied + test-loaded; Sprint-6 spec written). NOT a full build.
+
+## What was completed
+- **FreshTrack read-replica access proven** — `.env` `FRESHTRACK_DATABASE_URL` (role
+  `cloud_mackaysmarketing_readonly`). The FIRST non-GraphQL FreshTrack ingress; the GP/settlement
+  domain was blocked across Sprints 1–5 ("`readonlyDatabaseCredentials` returns null"). Read-only
+  probes committed: `ft:db:smoke` (connectivity), `ft:db:explore` (schema), `ft:db:gp-profile`
+  (GP profile + hub conformance).
+- **GP raw landing applied** — migration `0017_raw_ft_gp.sql`: `raw.ft_gp_schedule` /
+  `raw.ft_gp_detail` / `raw.ft_gp_payment` (faithful native-column mirror; temporal columns read
+  `::text` to dodge the +10 date off-by-one).
+- **Test batch loaded + verified** — `src/loaders/ft_gp.ts` (`npm run ft:gp:load`, newest-N-schedules
+  slice) + `npm run ft:gp:verify`: 50 schedules / 1,053 detail / 50 payments. Idempotent (0 net-new on
+  re-run), 0 unmapped consignors (35/35 in `core.dim_grower`), 100% load-lineage (`dispatch_load_id`
+  populated), dates exact (no off-by-one).
+- **Sprint-6 spec written** (`SPRINT.md`) — the full GP medallion: charge model (`charge_applied` +
+  `charge`/`charge_type` dims), core facts at schedule + load grain, RLS semantic views, additive Cube
+  metrics, internal + cross-source (FreshTrack↔NetSuite) reconciliation. Discovery section confirmed live.
+
+## Key discovery (build to this)
+- Deductions live in `charge_applied` (FR/WH/MD/LA/MI taxonomy, SAME as NetSuite, via
+  `charge_type.scope` / `account_code` prefix / `charge.name`) — NOT the `gp_detail.extra_*` slots.
+  Reconciles: GP deductions ≈ **$32.5M** ≈ NetSuite **$32.5M**; GP paid ≈ **$140.5M** ≈ NetSuite
+  net_paid **$139.7M**. Cross-source join key: `charge.netsuite_id` / `charge_type.netsuite_id`.
+- Net math reference = FreshTrack's own `public.v_power_bi_charge_split` view (gross = `box_quantity ×
+  price_invoiced_value`; deductions sign-flipped; GST from `vat_info` EX/INC/FREE; original-load splits).
+- RLS anchor = `gp_schedule.consignor_id` (the SETTLED party); `gp_detail.consignor_id` can be the
+  ORIGINAL grower on reconsignment (the 45-vs-35 distinct-consignor gap — surface, don't drop).
+
+## Test status
+- `npm run typecheck` clean · `npm test` **48/48**. No new automated tests yet (the build sprint adds:
+  charge classification, GST math, crosswalk incl. original-load case, fail-closed RLS).
+
+## What is NOT done (this was scoping, not the build)
+- The Sprint-6 build: charge raw tables (migration `0018`), the incremental loader, `core` / `semantic` /
+  Cube / RLS, the two reconciliation scripts, and the FULL backfill. Only a **50-schedule TEST slice** is
+  currently in `raw.ft_gp_*`.
+
+## Exact next step
+Execute the `SPRINT.md` "First step": read the live `v_power_bi_charge_split` def + `charge_type` rows,
+lock the FR/WH/MD/LA/MI mapping, state the net-computation approach + the incremental key
+(`last_modified_on`), then write migration `0018` (charge raw tables) and extend the loader.
+
+## Files changed
+- `SPRINT.md` (→ Sprint 6), `HANDOFF.md`, `package.json` (`ft:*` scripts), `src/lib/env.ts`
+  (`FRESHTRACK_DATABASE_URL` accessor)
+- `scripts/ft_db_{smoke,explore,gp_profile}.ts`, `scripts/ft_gp_verify.ts`
+- `src/lib/{freshtrack_db,ft_gp_specs}.ts`, `src/loaders/ft_gp.ts`, `supabase/migrations/0017_raw_ft_gp.sql`
+
+---
+
 # Handoff (Sprint 5): NetSuite RCTI / grower-settlement ingestion
 Date: 2026-06-22
 Session type: Build (NetSuite onboarded as a 2nd source; RCTI settlement landed raw→core→semantic; RLS + parity proven live; Cube metrics authored)

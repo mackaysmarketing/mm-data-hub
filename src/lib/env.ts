@@ -18,6 +18,9 @@ export const env = {
   freshtrackUrl: () => required('FRESHTRACK_GRAPHQL_URL'),
   freshtrackAuth: () => required('FRESHTRACK_AUTH_HEADER'),
   databaseUrl: () => required('DATABASE_URL'),
+  // FreshTrack production read-replica (Postgres, READ-ONLY). The GP/settlement domain (gp_*)
+  // is only reachable here, not via GraphQL. Distinct from databaseUrl() (the hub we write to).
+  freshtrackDatabaseUrl: () => required('FRESHTRACK_DATABASE_URL'),
 
   backfillStart: () => optional('BACKFILL_START', '2025-07-01'),
   // Blank BACKFILL_END means "today" (UTC) — resolved by the caller.
