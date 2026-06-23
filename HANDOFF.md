@@ -24,7 +24,8 @@ in this environment; code complete + validated offline + cube:gp ready). Built F
   helpers as `0008`/`0010`/`0016`; `cube_readonly` read-all. Paid date first-class.
 - **Cube (additive):** `cube/model/cubes/gp_settlement_schedule.yml` + `gp_settlement_load.yml` → views
   `gp_settlement` + `gp_settlement_load`; `gp_*` measures (never redefining a dispatch/NetSuite metric);
-  `cube.js` `queryRewrite` VIEW_GROWER_KEYS extended to scope both. **NOT yet deployed** (see Known issues).
+  `cube.js` `queryRewrite` VIEW_GROWER_KEYS extended to scope both. **Deployed live** to Cube Cloud
+  ("MM Data Hub"); base load cube renamed `gp_settlement_load_fact` (a cube and view cannot share a name).
 - **Unit tests (+16, 64 total):** charge classification (FR/WH/MD/MI/LA, GL-string fallback, LA=Load
   Adjustment), GST `vat_info` math, settlement rollup oracle (incl. LA credits), crosswalk (reconsignment).
 
@@ -54,14 +55,11 @@ in this environment; code complete + validated offline + cube:gp ready). Built F
 
 ## Test status
 - `npm run typecheck` clean · `npm test` **64/64** (+16 new).
-- **No regression:** `cube:rls` **12/12** · `cube:reconcile` **347/347** · `cube:settlement` **7/7** ·
-  `ns:reconcile` PASS · `ns:rls` **7/7** · `mcp:proof` **25/25** · `ns:parity` re-synced (see below).
+- **No regression (live, post-deploy):** `cube:gp` **9/9** · `cube:rls` **12/12** · `cube:reconcile`
+  **347/347** · `cube:settlement` **7/7** · `ns:reconcile` PASS · `ns:rls` **7/7** · `mcp:proof` **25/25**
+  · `ns:parity` re-synced (see below).
 
-## What is NOT done (deferred / operator-gated — not faked)
-- **Cube `gp_settlement` live deploy + `cube:gp` live run** — no Cube Cloud deploy token in this
-  environment (carry-over of the Sprint-2/5 chat-shared-secret rotation). Models validated offline
-  (YAML + member cross-check + no f-string braces); `cube:gp` fails cleanly with "Cube 'gp_settlement'
-  not found" pre-deploy. **Deploy:** `cd cube && npx cubejs-cli deploy --token <…>`, then `npm run cube:gp`.
+## What is NOT done (deferred — not faked)
 - Original-load split apportionment (deliberately not replicated — see Decisions).
 - Merging GP + NetSuite into one canonical settlement (kept as two reconciled sources, per SPRINT).
 - Hub MCP / Steep surfacing of GP metrics (later phase; the Cube metrics are the substrate).
@@ -73,7 +71,8 @@ in this environment; code complete + validated offline + cube:gp ready). Built F
   re-verified **5/5** against the current NetSuite (grand net 0.59%, deductions −0.10%).
 - **Reconsignment** is common (12,770 detail rows, 70k charge rows carry an original load). GP attributes
   to the schedule consignor; NetSuite to the RCTI vendor → per-grower cross-source differences (grand ties).
-- **Cube deploy token + `CUBEJS_API_SECRET` rotation** still TODO (carried from Sprint 2/5).
+- **Secret rotation TODO:** the GitHub PAT and the Cube deploy token were both provided in-session
+  (chat transcript) to complete the push + Cube deploy — rotate both (carried from Sprint 2/5).
 
 ## Files changed (Sprint 6 build)
 - `supabase/migrations/{0018_raw_ft_gp_charges,0019_core_gp_settlement,0020_semantic_grower_gp_settlement}.sql`
@@ -83,9 +82,9 @@ in this environment; code complete + validated offline + cube:gp ready). Built F
 - `tests/{ft_gp_charges,ft_gp_settlement,ft_gp_crosswalk}.test.ts`, `package.json`, `CLAUDE.md`, `HANDOFF.md`
 
 ## Exact next step
-Deploy the Cube `gp_settlement` models (`cd cube && npx cubejs-cli deploy --token <…>`) and run
-`npm run cube:gp` to prove the live metrics + RLS; rotate the chat-shared Cube secrets. Then wire the GP
-metrics into Steep / the Hub MCP (`list_grower_sales` behind `can_view_sales`).
+Wire the GP metrics into Steep (native Cube integration, internal context) and the Hub MCP
+(`list_grower_sales`/settlement behind `can_view_sales`, now that the `gp_settlement` view is live).
+Rotate the chat-shared secrets (GitHub PAT + Cube deploy token).
 
 ---
 

@@ -1,5 +1,5 @@
 cubes:
-  - name: gp_settlement_load
+  - name: gp_settlement_load_fact
     title: Grower Pool Settlement (Load Grain)
     description: >-
       FreshTrack grower-pool settlement at LOAD grain (schedule x dispatch_load). Source:

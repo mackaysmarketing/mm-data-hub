@@ -11,7 +11,7 @@ views:
     public: true
 
     cubes:
-      - join_path: gp_settlement_load
+      - join_path: gp_settlement_load_fact
         includes:
           - gp_load_count
           - gp_load_gross_sales
