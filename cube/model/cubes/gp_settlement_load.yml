@@ -1,0 +1,70 @@
+cubes:
+  - name: gp_settlement_load
+    title: Grower Pool Settlement (Load Grain)
+    description: >-
+      FreshTrack grower-pool settlement at LOAD grain (schedule x dispatch_load). Source:
+      core.fact_gp_settlement_load. Its unique value is the load-to-settlement LINEAGE NetSuite
+      (product-grain) cannot provide: dispatch_load_id joins settlement back to dispatch. ADDITIVE
+      — never redefines a dispatch or settlement metric. RLS anchor: grower_key (the SCHEDULE
+      consignor_id, NOT the gp_detail/original-load consignor), scoped in cube.js queryRewrite from
+      app_metadata.consignor_id. Deduction/GST measures signed; amounts never coalesced to 0.
+    public: false
+    sql_table: core.fact_gp_settlement_load
+
+    measures:
+      - name: gp_load_count
+        title: GP Settlement Load Count
+        description: CONTRACT — count of settled (schedule x dispatch_load) rows.
+        type: count
+        sql: "{CUBE}.dispatch_load_id"
+
+      - name: gp_load_gross_sales
+        title: GP Gross Sales (per load)
+        type: sum
+        sql: "{CUBE}.gross_sales"
+
+      - name: gp_load_total_deductions
+        title: GP Total Deductions (per load)
+        type: sum
+        sql: "{CUBE}.total_deductions"
+
+      - name: gp_load_net_paid
+        title: GP Net Settlement (per load)
+        description: CONTRACT — SUM of per-load net_settlement (gross + deductions + gst).
+        type: sum
+        sql: "{CUBE}.net_settlement"
+
+    dimensions:
+      - name: row_key
+        sql: "{CUBE}.schedule_id || '-' || {CUBE}.dispatch_load_id"
+        type: string
+        primary_key: true
+        public: false
+
+      - name: grower_key
+        title: Grower (consignor_id)
+        description: The SCHEDULE (settled) grower's consignor_id. RLS anchor.
+        sql: "{CUBE}.consignor_id::text"
+        type: string
+
+      - name: schedule_id
+        title: Schedule Id
+        sql: "{CUBE}.schedule_id::text"
+        type: string
+
+      - name: dispatch_load_id
+        title: Dispatch Load Id
+        description: The join key back to dispatch (raw.ft_dispatch_load.id) — the lineage NetSuite cannot provide.
+        sql: "{CUBE}.dispatch_load_id::text"
+        type: string
+
+      - name: load_no
+        title: Load No
+        sql: "{CUBE}.load_no"
+        type: string
+
+      - name: original_dispatch_load_id
+        title: Original Dispatch Load Id
+        description: The original load on reconsignment (lineage).
+        sql: "{CUBE}.original_dispatch_load_id::text"
+        type: string

@@ -38,8 +38,15 @@ function readClaims(securityContext) {
 }
 
 // Each governed view's RLS anchor. queryRewrite scopes whichever views a query references — so the
-// SAME app_metadata contract covers dispatch and settlement without one ever leaking into the other.
-const VIEW_GROWER_KEYS = { dispatch: 'dispatch.grower_key', settlement: 'settlement.grower_key' };
+// SAME app_metadata contract covers dispatch, NetSuite settlement, and GP settlement (schedule +
+// load grain) without one ever leaking into another. ADDITIVE: new views are scoped here on the
+// identical fail-closed contract; the existing dispatch/settlement scoping is untouched.
+const VIEW_GROWER_KEYS = {
+  dispatch: 'dispatch.grower_key',
+  settlement: 'settlement.grower_key',
+  gp_settlement: 'gp_settlement.grower_key',
+  gp_settlement_load: 'gp_settlement_load.grower_key',
+};
 
 /** Every member name referenced anywhere in a query (measures/dims/segments/time/filters/order). */
 function collectMembers(query) {

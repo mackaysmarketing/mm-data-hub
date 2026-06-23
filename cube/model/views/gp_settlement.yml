@@ -1,0 +1,42 @@
+views:
+  - name: gp_settlement
+    title: GP Settlement
+    description: >-
+      Governed FreshTrack grower-pool settlement metric surface (SCHEDULE grain), code-defined here
+      and consumed by Steep and the Hub MCP. The base cube is private; everything flows through this
+      view so RLS and the conformed model cannot be bypassed.
+
+      RLS: every query is row-filtered to the caller's consignor via the security context
+      (app_metadata.consignor_id) in cube.js queryRewrite. Internal (is_internal) is unscoped.
+      Neither -> fail closed. No dimension selection can widen a grower's scope.
+
+      Contract discipline: GP settlement metrics are ADDITIVE — they never redefine a dispatch or
+      NetSuite-settlement metric. Deduction/GST measures are signed; gp_net_paid is what the grower
+      earns. The second settlement source, reconciled to the NetSuite RCTI net.
+    public: true
+
+    cubes:
+      - join_path: gp_settlement_schedule
+        includes:
+          - gp_schedule_count
+          - gp_gross_sales
+          - gp_total_deductions
+          - gp_freight_deductions
+          - gp_warehouse_deductions
+          - gp_market_deductions
+          - gp_larapinta_deductions
+          - gp_misc_deductions
+          - gp_other_deductions
+          - gp_gst
+          - gp_net_paid
+          - gp_paid_amount
+          - gp_paid_schedule_count
+          - gp_unpaid_schedule_count
+          - grower_key
+          - grower_code
+          - grower_name
+          - schedule_no
+          - week_no
+          - payable_on
+          - paid_date
+          - paid_status

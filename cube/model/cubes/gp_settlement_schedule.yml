@@ -1,0 +1,150 @@
+cubes:
+  - name: gp_settlement_schedule
+    title: Grower Pool Settlement
+    description: >-
+      FreshTrack grower-pool settlement at SCHEDULE grain. Source:
+      core.fact_gp_settlement — GP schedules conformed (deterministic consignor_id, gross from
+      gp_detail, deductions from charge_applied by FR/WH/MD/LA/MI, GST from vat_info, paid from
+      gp_payment). The SECOND settlement source (NetSuite RCTIs is the first). ADDITIVE — these
+      gp_ metrics NEVER redefine a dispatch or NetSuite-settlement metric. RLS anchor: grower_key
+      (the SETTLED grower's consignor_id), scoped in cube.js queryRewrite from
+      app_metadata.consignor_id (same fail-closed contract as dispatch + settlement). Deduction
+      and GST measures are signed (<= 0 normally; LA load-adjustments can be a net credit > 0).
+      Amounts summed with nulls excluded, never coalesced to 0.
+    public: false
+    sql_table: core.fact_gp_settlement
+
+    measures:
+      - name: gp_schedule_count
+        title: GP Schedule Count
+        description: CONTRACT — count of GP settlement schedules (schedule grain).
+        type: count_distinct
+        sql: "{CUBE}.schedule_id"
+
+      - name: gp_gross_sales
+        title: GP Gross Sales
+        description: CONTRACT — SUM of gross_sales (box_quantity x price_invoiced_value). Nulls excluded.
+        type: sum
+        sql: "{CUBE}.gross_sales"
+
+      - name: gp_total_deductions
+        title: GP Total Deductions
+        description: CONTRACT — SUM of all deductions (signed). = freight+warehouse+market+larapinta+misc+other.
+        type: sum
+        sql: "{CUBE}.total_deductions"
+
+      - name: gp_freight_deductions
+        title: GP Freight Deductions (FR)
+        type: sum
+        sql: "{CUBE}.deduction_freight"
+
+      - name: gp_warehouse_deductions
+        title: GP Warehouse Deductions (WH)
+        type: sum
+        sql: "{CUBE}.deduction_warehouse"
+
+      - name: gp_market_deductions
+        title: GP Market Deductions (MD)
+        type: sum
+        sql: "{CUBE}.deduction_market"
+
+      - name: gp_larapinta_deductions
+        title: GP Load-Adjustment Deductions (LA)
+        description: FreshTrack LA = Load Adjustment (account 5xxxxx); a net credit when positive. NB — distinct from NetSuite LA (Larapinta).
+        type: sum
+        sql: "{CUBE}.deduction_larapinta"
+
+      - name: gp_misc_deductions
+        title: GP Misc Deductions (MI)
+        type: sum
+        sql: "{CUBE}.deduction_misc"
+
+      - name: gp_other_deductions
+        title: GP Other Deductions (unclassified)
+        type: sum
+        sql: "{CUBE}.deduction_other"
+
+      - name: gp_gst
+        title: GP GST
+        description: SUM of GST on deductions (signed, from vat_info EX/INC/FREE).
+        type: sum
+        sql: "{CUBE}.gst_total"
+
+      - name: gp_net_paid
+        title: GP Net Settlement
+        description: CONTRACT — SUM of net_settlement (gross + deductions + gst = what the grower earns). Reconciles to gp_payment.
+        type: sum
+        sql: "{CUBE}.net_settlement"
+
+      - name: gp_paid_amount
+        title: GP Paid Amount
+        description: SUM of paid_amount (actual cash from gp_payment).
+        type: sum
+        sql: "{CUBE}.paid_amount"
+
+      - name: gp_paid_schedule_count
+        title: GP Paid Schedules
+        description: Schedules with a paid_date (settled in cash).
+        type: count_distinct
+        sql: "{CUBE}.schedule_id"
+        filters:
+          - sql: "{CUBE}.paid_date is not null"
+
+      - name: gp_unpaid_schedule_count
+        title: GP Unpaid Schedules
+        description: Schedules with no paid_date. Demonstrates unpaid are flagged, not zero-dated.
+        type: count_distinct
+        sql: "{CUBE}.schedule_id"
+        filters:
+          - sql: "{CUBE}.paid_date is null"
+
+    dimensions:
+      - name: schedule_id
+        sql: "{CUBE}.schedule_id"
+        type: string
+        primary_key: true
+        public: false
+
+      - name: grower_key
+        title: Grower (consignor_id)
+        description: The SETTLED grower's consignor_id. RLS anchor.
+        sql: "{CUBE}.consignor_id::text"
+        type: string
+
+      - name: grower_code
+        title: Grower Code
+        sql: "{CUBE}.grower_code"
+        type: string
+
+      - name: grower_name
+        title: Grower Name
+        sql: "{CUBE}.grower_name"
+        type: string
+
+      - name: schedule_no
+        title: Schedule No
+        sql: "{CUBE}.schedule_no"
+        type: string
+
+      - name: week_no
+        title: Week No
+        sql: "{CUBE}.week_no"
+        type: number
+
+      - name: payable_on
+        title: Payable On
+        description: The settlement business date.
+        sql: "{CUBE}.payable_on"
+        type: time
+
+      - name: paid_date
+        title: Paid Date
+        description: Date the schedule was paid (from gp_payment). Null when unpaid.
+        sql: "{CUBE}.paid_date"
+        type: time
+
+      - name: paid_status
+        title: Paid Status
+        description: PA Payable / PD Paid / DR Draft.
+        sql: "{CUBE}.paid_status"
+        type: string
