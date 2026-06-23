@@ -25,6 +25,52 @@ export function makePool(): pg.Pool {
   });
 }
 
+/** The hub Supabase project ref (data_hub). The ONLY database any loader may write to. */
+export const HUB_PROJECT_REF = 'uqzfkhsdyeokwnkpcxui';
+
+/** True when a connection string targets the hub project. With the Supabase pooler the ref lives
+ *  in the USERNAME (`postgres.<ref>`), not the host — so test the whole string, not just the host.
+ *  Pure + side-effect-free so it is unit-testable without a database. */
+export function connStringTargetsHub(connStr: string): boolean {
+  return typeof connStr === 'string' && connStr.includes(HUB_PROJECT_REF);
+}
+
+/** Write-target safety (Sprint 7 hard blocker). Before ANY loader write, prove the pool will
+ *  write to the hub — abort loudly otherwise. Two independent checks defend the OneDrive
+ *  `.env`-revert / wrong-target failure mode:
+ *    1. the configured DATABASE_URL carries the hub ref (catches a reverted/swapped .env), and
+ *    2. a LIVE fingerprint — the connected database actually exposes the view-backing tables
+ *       (catches a string that looks right but points at the wrong DB).
+ *  Throws (never returns false) so a misconfigured run can never reach an upsert. */
+export async function assertHubTarget(pool: pg.Pool): Promise<void> {
+  const url = env.databaseUrl();
+  if (!connStringTargetsHub(url)) {
+    let host = '(unparseable)';
+    try { host = new URL(url).host; } catch { /* ignore */ }
+    throw new Error(
+      `ABORT (write-target safety): DATABASE_URL does not target hub ${HUB_PROJECT_REF} ` +
+      `(host=${host}). Refusing to write. Check .env did not revert to the wrong project.`,
+    );
+  }
+  const c = await pool.connect();
+  try {
+    const r = await c.query<{ a: string | null; b: string | null; c: string | null }>(
+      `select to_regclass('raw.ft_dispatch_load')::text as a,
+              to_regclass('raw.ft_pallet')::text        as b,
+              to_regclass('raw.sync_window')::text       as c`,
+    );
+    const row = r.rows[0];
+    if (!row?.a || !row?.b || !row?.c) {
+      throw new Error(
+        `ABORT (write-target safety): connected database is missing raw.ft_dispatch_load / ` +
+        `raw.ft_pallet / raw.sync_window — this is not the hub. Refusing to write.`,
+      );
+    }
+  } finally {
+    c.release();
+  }
+}
+
 export type ColKind =
   | 'text'
   | 'uuid'
