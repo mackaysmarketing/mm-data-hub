@@ -1,187 +1,85 @@
-# Sprint 6: FreshTrack grower-pool (GP) settlement — load-grain settlement + cross-source reconcile
+# Sprint 7: FreshTrack dispatch DB backfill
 Date: 2026-06-23
 Repo: mackaysmarketing/mm-data-hub
-
-This onboards FreshTrack's **grower-pool (GP) settlement** as a source, landed via FreshTrack's
-**direct Postgres read-replica** (the first non-GraphQL FreshTrack ingress; blocked across Sprints 1–5,
-now unblocked). It is the **second view of grower settlement** — NetSuite RCTIs (Sprint 5) are the
-accounting mirror of these FreshTrack GP schedules. Its unique value over NetSuite is **load-grain
-lineage**: every settlement line carries `dispatch_load_id`, so settlement can finally be joined back
-to dispatch (NetSuite is product-grain and cannot). It conforms to `core.dim_grower` via `consignor_id`,
-is exposed as RLS-scoped settlement semantic views + additive Cube metrics, and is **reconciled to the
-NetSuite RCTI net** to prove the two sources agree.
-
-## Orient first (read before assuming anything)
-- Read `SPEC.md` (medallion + semantic + metrics + §7 access + §9 data-quality), all of `CLAUDE.md`
-  (schema boundary, the `app_metadata` RLS claim contract, the Cube + Hub MCP + NetSuite sections),
-  `HANDOFF.md` (the Sprint-5 NetSuite settlement: `core.fact_settlement_bill`, `semantic.grower_settlement`,
-  the FR/WH/MD/LA/MI charge taxonomy, the RLS proof), and the memory `freshtrack-readreplica-unblocked`.
-- Study the existing settlement layer and **mirror it**: migrations `0014`–`0016`, `cube/model/cubes/settlement_bill.yml`,
-  `cube/model/views/settlement.yml`, `src/lib/ns_charges.ts` (the charge classifier). GP settlement
-  metrics are **ADDED, never redefining** a dispatch or NetSuite-settlement metric.
-- **READ-ONLY out of the FreshTrack replica — never write.** It is a replica of FreshTrack prod.
-  DB objects touch ONLY `raw`/`core`/`semantic` — never `public`/`auth`/`storage`.
-
-## Already done — the Phase-2 probe (build FROM here, do not redo)
-- Read-replica access proven (`FRESHTRACK_DATABASE_URL`, role `cloud_mackaysmarketing_readonly`).
-  Probe scripts committed: `ft:db:smoke`, `ft:db:explore`, `ft:db:gp-profile`.
-- Migration `0017_raw_ft_gp.sql` **applied** to the hub: `raw.ft_gp_schedule`, `raw.ft_gp_detail`,
-  `raw.ft_gp_payment` (faithful native-column mirror; temporal cols read via `::text`).
-- Slice loader `src/loaders/ft_gp.ts` (`npm run ft:gp:load`) + `ft:gp:verify` ran a 50-schedule test
-  batch: idempotent (0 net-new on re-run), 0 unmapped consignors, 100% load lineage, dates exact.
-- **Remaining for this sprint:** land the charge tables, build core/semantic/Cube/RLS, add the
-  incremental loader, and the two reconciliations.
-
-## Discovery — CONFIRMED LIVE against the replica (build to this; do not re-derive)
-- **Source:** `cloud_mackaysmarketing` (Postgres 17, a Django app), schema `public`. The GP set:
-  `gp_schedule` (~1,254 settlement headers), `gp_detail` (~23,544 lines, **one per dispatch load**),
-  `gp_payment` (~1,257). Payable range 2025-06 → 2026-06. 35 settled growers.
-- **Grain & keys:**
-  - `gp_schedule` — header. `schedule_no`, `week_no`, `payable_on`, `invoiced_amount_value`,
-    `paid_amount_value`, `gp_status_id`, **`consignor_id` = the grower being settled (RLS anchor)**.
-  - `gp_detail` — one line **per `dispatch_load_id`** (100% populated; also `original_dispatch_load_id`
-    on reconsignment, `harvest_load_id` mostly null). Prices progress `price_quoted → invoiced → paid
-    → remitted`. **Gross sale = `box_quantity × price_invoiced_value`** (see the Power BI ref below).
-  - `gp_payment` — `paid_on` (first-class paid date), `amount_value`, `gp_status`, `gp_schedule_id`.
-- **THE DEDUCTION MODEL = `charge_applied`** (~117,640 rows) — the normalized charge ledger, NOT the
-  `gp_detail.extra_*` slots (those are secondary/legacy; populated unevenly). Each row links to
-  `gp_schedule_id` + `gp_detail_id` + `dispatch_load_id` + `charge_id`, and carries `total_amount_value`,
-  `account_code`, **`is_deductible`**, `vat_info` (GST), `text_1` (human label, e.g.
-  "FR - Blenners - Road - Tully to Townsville…", "Ripening", "Admin Fee").
-  - Dimensions: `charge` (rate card: `name`, `charge_type_id`, `account_code`, **`netsuite_id`**) and
-    `charge_type` (`code`, `name`, **`scope`** e.g. "Freight" / "WH - Handling" / "MD- Levy", `is_deductible`,
-    **`netsuite_id`**). `gp_status` = `PA` Payable / `PD` Paid / `DR` Draft.
-  - **Taxonomy = the SAME FR/WH/MD/LA/MI scheme as NetSuite**, derivable from `charge_type.scope` /
-    `charge.name` prefix / `account_code` first digit (`1` FR, `2` WH, `3` MD, `4` MI, Larapinta its own,
-    credits negative). **Reuse the Sprint-5 classifier idea (`src/lib/ns_charges.ts`)** — do not invent a
-    second taxonomy.
-- **Settlement math — reference implementation is FreshTrack's own `public.v_power_bi_charge_split`
-  view (read its def; cite it, do not naively sum):** net = gross sales (`Σ box_quantity ×
-  price_invoiced_value`) − deductions (`charge_applied` where `is_deductible`, sign-flipped) ± GST
-  (`vat_info`: `EX` → +10%, `INC` → 1/11 inclusive, `FREE` → 0). The view also apportions **original-load**
-  charges by quantity (reconsignment splits) — replicate that or anchor on the header totals and reconcile.
-- **Reconciliation anchors (both CONFIRMED to ~0.1%):**
-  - Internal: charge_applied `is_deductible` total ≈ **$32.5M** vs the Sprint-5 NetSuite deductions
-    **$32,498,332**. FreshTrack `gp_payment` paid total ≈ **$140.5M** vs NetSuite `net_paid` **$139.7M**.
-  - The explicit join key is **`charge.netsuite_id` / `charge_type.netsuite_id`** (FreshTrack → NetSuite).
-- **Consignor model (the 45-vs-35 gap):** `gp_detail.consignor_id` may be the **original** grower on a
-  reconsigned load, while `gp_schedule.consignor_id` is **who is settled**. 45 distinct detail consignors
-  vs 35 schedule consignors → 10 original-only. **RLS scopes on the SCHEDULE consignor_id** (the settled
-  party). Surface the 10, do not drop. All 35 schedule consignors map to `core.dim_grower` (35/35),
-  **deterministically on `consignor_id`** (no code-matching needed, unlike the NetSuite `entityid` crosswalk).
-- **Archived:** `is_archived` is a soft flag; archived schedules/loads (and their detail) stay fully
-  visible (most settled schedules are archived). Filter at semantic, never drop at raw. Incremental by
-  `last_modified_on` (an archive/lock/pay event bumps it).
-- **Date gotcha (already handled in the specs):** read `date`/`timestamptz` as `::text` — a JS `Date`
-  round-trip shifts a `date` back a day across +10.
+Hub (target): Supabase `uqzfkhsdyeokwnkpcxui` (ap-southeast-2) — NOT "Analytics Agent"
+Source: FreshTrack production DB, read-only — `FRESHTRACK_DATABASE_URL`
+(`cloud_mackaysmarketing_readonly` @ `fts-cloud-prod-rds.c1unadkiffrs.ap-southeast-2.rds.amazonaws.com` / `cloud_mackaysmarketing`). This is production, not a replica — the big backfill runs OFF-PEAK.
 
 ## Scope
-Extend the raw GP landing with the charge ledger + dims, conform in `core` (a parsed charge dimension
-reusing the FR/WH/MD/LA/MI taxonomy; settlement facts at **schedule grain** and **load grain**), expose
-RLS-scoped `semantic` views (schedule-grain settlement + the load-grain lineage view that joins
-settlement to dispatch), add **additive** Cube settlement metrics, and prove two reconciliations
-(internal header rollup + cross-source to the NetSuite RCTI net). Incremental, idempotent loader by
-`last_modified_on`. **Not** in scope: see Out of Scope.
+The warehouse dispatch tables that feed the dashboard — `raw.ft_dispatch_load` (5,926 loads) and `raw.ft_pallet` (38,796 pallets), surfaced through `semantic.grower_dispatch_detail` — are stale and partial. Latest dispatch is 2026-06-20 but coverage is thin: a single grower (LMB) has only 22 rows, all dated 2025-07-15, with null box counts, and nothing in 2026. This sprint builds a dispatch loader that pulls the full, current dispatch history directly from the FreshTrack production DB into those exact warehouse tables, mirroring the proven Sprint 6 GP loader (`ft_gp.ts`): keyset-paged read, idempotent upsert on `id`, resumable via `raw.sync_window`, incremental by `last_modified`. NOT in scope: building a `core.fact_dispatch` layer, touching the separate app-side `public.ft_*` dispatch path, or building any new dashboard tile / Cube cube. The deliverable is correct, current dispatch data in the tables the existing view already reads.
+
+## Why this is needed (evidence)
+- `raw.ft_dispatch_load` = 5,926 and `raw.ft_pallet` = 38,796 — unchanged since the Sprint 1 load; no `dispatch` stream has ever run through `raw.sync_window` (only `gp:*` and `ns_*`).
+- The app-side `public.ft_*` path syncs dispatch incrementally (`public.ft_sync_state.dispatchLoads`), but it writes to `public.ft_dispatch` (~739 rows) which the dashboard does NOT read. The dashboard reads `raw` → `semantic.grower_dispatch_detail`.
+- Net effect: the warehouse dispatch layer is a frozen, partial Sprint 1 snapshot. LMB (a real four-farm grower, all entities `is_active`) shows 22 rows ending 2025-07-15. That is a load gap, not reality.
+
+## Step 0 — Discovery (REQUIRED before writing the loader)
+Run the recon against `FRESHTRACK_DATABASE_URL` (`freshtrack_recon.mjs`, already in repo/outputs — metadata + row estimates only, load-safe). Produce and commit a source→target column map before any loader code:
+- [ ] Identify the FreshTrack source dispatch-load and pallet tables, their `id`, and the `last_modified` (and pickup-date) columns.
+- [ ] Map source columns → the `raw.ft_dispatch_load` / `raw.ft_pallet` columns that `semantic.grower_dispatch_detail` consumes: `grower_key` (= consignor_id), `dispatched_on`, `dispatched_at`, `pack_date`, `pack_week`, `load_no`, `pallet_id`, `pallet_no`, `crop`, `variety`, `product`, `boxes`, `net_weight`, `net_weight_unit`, `is_field`, `is_archived`, and the pallet→load linkage.
+- [ ] Confirm LMB's dispatch in the source is keyed to the LMB consignor_ids (`LMBFA`, `LMBBF`, `LMBCO`, `LMBEP`) so rows land under the right `grower_key`.
+- [ ] If the source schema diverges from the current `raw.ft_dispatch_load` / `raw.ft_pallet` shape, STOP and flag it as a decision — do not silently alter `semantic.grower_dispatch_detail`.
 
 ## Acceptance Criteria
-- [ ] **Raw landing extended** (migration `0018`): `raw.ft_charge_applied`, `raw.ft_charge`,
-      `raw.ft_charge_type`, `raw.ft_gp_status` — faithful native-column mirrors (PK = `id`, text not enum,
-      temporal via `::text`, `_raw` on the small dims only). `raw.ft_gp_*` from `0017` already applied.
-- [ ] **Loader** (`src/loaders/ft_gp.ts` generalized): read-only, **incremental by `last_modified_on`**
-      (`-- --since=YYYY-MM-DD`) and idempotent (upsert on `id`); resumable via `raw.sync_window`. Full
-      backfill lands all GP schedules/detail/payments + their `charge_applied` + the charge dims. No writes
-      to FreshTrack. Counts reported.
-- [ ] **Charge dimension** `core.dim_gp_charge` (+ classifier, unit-tested): every `charge`/`charge_type`
-      classified into **FR/WH/MD/LA/MI + subcategory** from `charge_type.scope`/`account_code`/`name`,
-      reusing the Sprint-5 taxonomy. Unknown → OTHER (surfaced, counted). Products (the Sales rows) tagged
-      by produce/crop.
-- [ ] **Grower crosswalk:** every `gp_schedule.consignor_id` resolves to `core.dim_grower.consignor_id`
-      (35/35), deterministically. The 10 detail-only (original-load) consignors are surfaced and explained,
-      never silently dropped. Unmapped settled growers → 0.
-- [ ] **Settlement facts:**
-      - `core.fact_gp_settlement` (**schedule grain**): gross, deductions by category (signed), GST, net,
-        `paid_date`, `paid_status` (PA/PD/DR), reconciliation diff column.
-      - `core.fact_gp_settlement_load` (**load grain**, via `gp_detail.dispatch_load_id`): per-load gross +
-        itemized deductions — the lineage NetSuite cannot provide.
-- [ ] **Line/charge reconciliation (internal):** per schedule, gross − deductions ± GST reconciles to
-      `gp_schedule.invoiced_amount_value` / `paid_amount_value` within a stated tolerance (mirror the
-      Sprint-5 `recon_diff = 0` proof); original-load splits handled per the Power BI reference; variance
-      logged, not hidden.
-- [ ] **Cross-source reconciliation (FreshTrack ↔ NetSuite):** Σ GP net paid per grower per period ties to
-      the NetSuite RCTI `net_paid` for the same grower/period (the $140.5M ≈ $139.7M anchor); deductions tie
-      (~$32.5M). Spot-check one grower line-by-line via `charge.netsuite_id`. Differences explained.
-- [ ] **`semantic.grower_gp_settlement`** (schedule grain) **+ `semantic.grower_gp_settlement_load`**
-      (load grain) — `security_invoker`; RLS by **schedule `consignor_id`** using the **same
-      `app_metadata`-only, fail-closed** helpers as `0008`/`0010`/`0016`; `cube_readonly` read-all policy
-      (mirror `0012`). **Paid date first-class.**
-- [ ] **RLS proof** on the new views: ≥2 distinct grower contexts (each sees only its own settlements) +
-      1 internal (all) + no-claim → 0 + forged top-level claim → 0; no arg/dimension widens scope. Runnable
-      script, captured output.
-- [ ] **Cube:** additive `gp_settlement` cube + view (`gp_gross_sales`, `gp_total_deductions`, FR/WH/MD/LA/MI
-      deductions, `gp_net_paid`, `gp_paid_rcti`/unpaid, schedule + **dispatch_load** dimensions), governed,
-      **never redefining** an existing dispatch or NetSuite-settlement metric. `cube.js` `queryRewrite`
-      extended to scope the new view with the identical contract (existing dispatch + settlement RLS preserved).
-- [ ] Schema boundary respected (raw/core/semantic only); no Postgres enums; amounts never coalesced in a
-      way that hides nulls (SPEC §9.3).
+- [x] **Target is correct.** Writes ONLY to `raw.ft_dispatch_load` / `raw.ft_pallet`. Not `public.ft_*`, not new tables.
+- [x] **Target is asserted at runtime.** `assertHubTarget(pool)` aborts before any write unless the resolved write connection carries `uqzfkhsdyeokwnkpcxui` (the pooler keeps the ref in the USERNAME, not the host) AND the live DB exposes the view-backing tables. `connStringTargetsHub` unit-tested; fired live.
+- [x] **Backfill lands current data.** `ft:dispatch:reconcile` PASS: loads **22,033/22,033 (0.00%)**, pallets **201,894/201,852 (+0.02%)**, Σnet_weight/Σboxes within 0.02%; `max(dispatched_on)` = **2026-06-27** (current). +42 pallet residual = upsert-no-delete (within 2% tol; surfaced).
+- [ ] **LMB proof (user-facing) — DEFERRED (user decision).** The source caps LMB at `actual_pickup_on` 2025-07-15 and records boxes in `reconsigned_boxes`, not `box_count`. **672 LMB loads landed in `raw`**; dashboard visibility needs the dispatched/boxes redefinition (`DISPATCH_DEFINITION_PROPOSAL.md`). Not achievable by the backfill alone — held as the documented next step per the option-A decision.
+- [x] **Idempotent.** Slice + incremental re-runs grew 0 rows (22,033 / 201,894 stable).
+- [x] **Incremental works.** `--since=2026-06-23` picked up only 198 loads / 781 pallets by `last_modified_on`; `raw.sync_window` `dispatch` + `pallet` both `status=done`.
+- [x] **RLS intact.** `ft:dispatch:rls` **7/7**: internal all (44,392), grower own-only, no-claim→0, forged→0, no widening.
+- [x] **Reconcile proof exists.** `ft:dispatch:reconcile` — counts/volumes/per-grower/per-pack-week/currency, variances surfaced. PASS.
+- [x] **No regression.** All green: `cube:reconcile` 471/471 · `cube:rls` 12/12 · `cube:settlement` 7/7 · `cube:gp` 9/9 · `ns:reconcile` PASS · `ns:rls` 7/7 · `ns:parity` 5/5 · `ft:gp:reconcile` PASS · `ft:gp:parity` 5/5 · `ft:gp:rls` 14/14.
 
-## Definition of Done (with evidence)
-- [ ] Runnable incremental loader + docs (how to run, the `last_modified_on` window, the read-only replica
-      access it needs).
-- [ ] Internal-reconciliation + cross-source-parity + RLS-proof committed as runnable scripts, passing
-      (`ft:gp:reconcile`, `ft:gp:parity`, `ft:gp:rls`).
-- [ ] `npm run typecheck` clean; `npm test` green (new unit tests: charge classification incl. LA/credits,
-      GST `vat_info` math, crosswalk incl. original-load-consignor case, fail-closed RLS).
-- [ ] **No regression:** `cube:rls`, `cube:reconcile`, `cube:settlement`, `ns:reconcile`, `ns:rls`,
-      `ns:parity`, `mcp:proof` all still pass.
-- [ ] `CLAUDE.md` + `HANDOFF.md` updated (FreshTrack GP as a source; the read-replica ingress; the charge
-      model; the FreshTrack↔NetSuite reconciliation).
-- [ ] Committed and pushed to `mackaysmarketing/mm-data-hub` via the **PAT-in-remote-URL** method (never
-      `gh`). Scrub the token after.
+## Definition of Done
+- [ ] All acceptance criteria checked with evidence (query output / proof-script results pasted into HANDOFF.md)
+- [ ] Reconcile + idempotency proofs green; typecheck clean; full test suite passing
+- [ ] HANDOFF.md updated (honest "what is NOT done")
+- [ ] Committed in logical chunks AND the commit confirmed present on `origin/main` — `git log origin/main` shows it, `0 ahead`. (Encoded fix: last sprint's final commit `bfaed42` failed to push and was left local; do not declare done on an unpushed commit.)
 
-## Quality Rubric (mm-data-hub — FreshTrack GP settlement)
+## Out of Scope
+- `core.fact_dispatch` conformance layer (raw → view-direct is the current architecture; a core fact is a later sprint unless explicitly added).
+- The app-side `public.ft_*` dispatch path (separate loader, not the dashboard source).
+- New dashboard tiles or Cube cubes/measures for dispatch.
+- Reconsignment apportionment, scan data, any non-dispatch source.
+
+## Key decisions (mirror Sprint 6, stated up front)
+- **Source / cadence:** FreshTrack prod DB (read-only), keyset-paged with `statement_timeout`; full backfill OFF-PEAK (production-direct, gentle); incremental thereafter.
+- **Target:** `raw.ft_dispatch_load` + `raw.ft_pallet`; host asserted = `uqzfkhsdyeokwnkpcxui`.
+- **Idempotency / resumability:** upsert on `id`; `raw.sync_window` streams for dispatch + pallet.
+- **Incremental key:** `last_modified` (exact column confirmed in Step 0; pickup-date noted).
+- **Mirror:** `loaders/ft_gp.ts` for the loader; `ft_gp_reconcile.ts` for the proof; the GP RLS proof for the RLS check.
+
+## Quality Rubric — Mackays Tools (internal) + universal
 | Criterion | What to check |
 |-----------|--------------|
-| **Schema-ownership boundary** | Every migration touches only `raw`/`core`/`semantic`. Zero DDL/reads against `public.*` IN THE HUB. (The FreshTrack replica `public` is read-only SOURCE, never written.) **Hard blocker.** |
-| **Read-only / secrets** | FreshTrack replica access is SELECT-only (session pinned read-only); no writes. Creds in env, never committed. |
-| **Grower mapping** | 100% of settled (`gp_schedule`) consignors map to `dim_grower` on `consignor_id`; the 10 original-load detail consignors surfaced + explained; unmapped → 0. |
-| **Charge classification** | Every deduction lands in FR/WH/MD/LA/MI + subcategory from `charge_type`/`account_code`/`name`; GST (`vat_info`) handled; OTHER surfaced. Matches FreshTrack's own `v_power_bi_charge_split`. |
-| **Reconciliation (internal)** | Per-schedule gross − deductions ± GST ties to the header total within tolerance; original-load splits handled; variance logged. |
-| **Reconciliation (cross-source)** | GP net/deductions tie to the NetSuite RCTI net/deductions per grower/period (≈$139.7M / ≈$32.5M anchors); one grower spot-checked via `charge.netsuite_id`. |
-| **RLS propagation** | Grower context returns only its own settlements (scoped on SCHEDULE consignor_id); ≥2 grower + 1 internal proven; no arg/dimension widens scope; forged/no-claim → 0. **Hard blocker.** |
-| **Load-grain lineage** | `fact_gp_settlement_load` / the load-grain view correctly join settlement to `raw.ft_dispatch_load` via `dispatch_load_id`; this is the value NetSuite cannot provide. |
-| **Settlement-date integrity** | `paid_date` from `gp_payment`, first-class, never fabricated; unpaid/Draft flagged, never zero-dated. Dates not shifted (`::text` read path). |
-| **Schema evolution safety** | No Postgres enums; stable column names; UUID PKs; `_raw` on small dims only; Cube metrics additive-only. |
-| **TypeScript** | `npm run typecheck` clean; no `any` without a comment; no secrets in code. |
+| **Write-target safety** | Loader asserts hub host (`uqzfkhsdyeokwnkpcxui`) before any write; aborts otherwise. Hard blocker. |
+| **FreshTrack DB read** | Read-only; keyset-paged; `statement_timeout` set; off-peak for backfill; null-safe column mapping. |
+| **Star/warehouse conformance** | Writes only to the view-backing `raw.ft_dispatch_load` / `raw.ft_pallet`; column map preserves what `semantic.grower_dispatch_detail` reads. No silent view changes. |
+| **Idempotency** | Re-run does not grow counts; resumable via `raw.sync_window`. |
+| **Supabase RLS** | `semantic.grower_dispatch_detail` fail-closed behaviour preserved; no widening. |
+| **Grower isolation** | Grower A cannot see Grower B's dispatch under any claim permutation. Hard blocker. |
+| **Automation safety** | Explicit stop conditions; reconcile-to-source proof; no silent data loss on malformed/archived rows. |
+| **No secrets in code** | `FRESHTRACK_DATABASE_URL` and hub URL from env only. |
+| **Clean handoff** | Working tree clean; commit on `origin/main`; HANDOFF.md current. |
+**Threshold:** write-target safety and grower isolation are hard blockers; everything else 5/5.
 
-**Threshold:** Schema-ownership boundary and RLS propagation are non-negotiable hard blockers.
-Grower mapping, both reconciliations, and charge classification are the settlement core. Pass 9/11.
+---
 
-## Out of Scope (defer/stub, don't fake)
-- **Decoding the `gp_detail.extra_*` slots** beyond noting they exist — the authoritative deduction model
-  is `charge_applied`. Only revisit if a reconciliation gap forces it.
-- **Replicating the full original-load split apportionment** if anchoring on header totals reconciles
-  within tolerance — state which approach was taken.
-- **Merging the FreshTrack-GP and NetSuite-RCTI settlement views into one** — keep them as two reconciled
-  sources this sprint; unification (single canonical settlement) is a later decision.
-- **Hub MCP / Steep surfacing** of GP metrics — later phase (the Cube metrics are the substrate).
-- **Other FreshTrack-replica domains** (orders, invoices, EDI, harvest) — not this sprint.
-- **Write-back to FreshTrack** — never.
+## Evaluator session opener (Phase 3 — paste into a fresh Claude Code session after the build)
 
-## Prerequisite (satisfied)
-Read-replica access (`FRESHTRACK_DATABASE_URL`) is provisioned and proven. No external blocker remains.
-Keep the connection read-only; the role is `_readonly` and the session pins `default_transaction_read_only`.
+```
+You are a skeptical senior engineer doing QA on a dispatch backfill that was just written for mm-data-hub.
+Your job is to find everything wrong, incomplete, or inconsistent. Do not approve anything unless you are certain it meets the standard. Verify against the live hub, not the run log.
 
-## First step
-Read the orient docs + the live `public.v_power_bi_charge_split` / `v_power_bi_charges` defs and
-`charge_type` rows; lock the FR/WH/MD/LA/MI mapping from `charge_type.scope`/`account_code`; **state** the
-net-computation approach (replicate splits vs anchor-on-header-and-reconcile) and the incremental key
-(`last_modified_on`); then write migration `0018` (charge raw tables) and extend the loader, acknowledging
-scope + acceptance criteria before the core/semantic build.
+Start by reading SPRINT.md and HANDOFF.md, then specifically verify:
+- TARGET: confirm the loader wrote to raw.ft_dispatch_load and raw.ft_pallet (NOT public.ft_*, NOT a new table). Confirm the loader asserts the hub host uqzfkhsdyeokwnkpcxui before writing — try to prove it would abort against the wrong DB.
+- LANDED: query the live hub. Is max(dispatched_on) current? Do raw.ft_dispatch_load / raw.ft_pallet counts reconcile to the FreshTrack source counts? Re-run the reconcile script and read the output.
+- LMB: run the dashboard's own query — does semantic.grower_dispatch_detail return LMB dispatches for the most recent completed week, with non-null boxes, across LMBFA/LMBBF/LMBCO/LMBEP? If LMB is still empty, the sprint failed regardless of what the handoff claims.
+- IDEMPOTENCY: run the incremental again. Did any count grow? It must not.
+- RLS: prove semantic.grower_dispatch_detail still fail-closes — internal all, grower own only, no-claim 0, forged 0.
+- NO REGRESSION: run cube:*, ns:*, ft:gp:* proofs. Report any failure.
+- PUSH: confirm the final commit is on origin/main (git log origin/main, 0 ahead). A local-only commit is not done.
 
-## Evaluator session (Phase 3 — fresh session, adversarial)
-Open a second fresh session with the skeptical-senior-engineer opener (agent-harness skill, Phase 3).
-Point it at this `SPRINT.md` + `HANDOFF.md`; have it run `ft:gp:reconcile`, `ft:gp:parity`, `ft:gp:rls`
-and the no-regression suite, and score each Quality Rubric row honestly — especially: does a grower
-context leak another's settlement under ANY claim permutation; does the internal rollup actually tie to
-the header (not just claim to); is the FreshTrack↔NetSuite parity real (per-grower, not just grand-total);
-are the 10 original-load consignors handled; are unpaid/Draft schedules flagged not zero-dated.
+Report each as PASS/FAIL with the evidence. Do not say the work is complete unless you have verified every one.
+```

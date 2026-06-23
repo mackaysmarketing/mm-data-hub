@@ -1,3 +1,105 @@
+# Handoff (Sprint 7 BUILD): FreshTrack dispatch DB backfill — warehouse tables made current
+Date: 2026-06-23
+Session type: Build (new canonical dispatch loader from the FreshTrack prod Postgres source into the
+view-backing raw tables; full backfill executed live + reconciled; RLS + idempotency + incremental
+proven; redefinition finding documented and DEFERRED per user decision)
+
+## What was completed
+The warehouse dispatch tables that back `semantic.grower_dispatch_detail` — `raw.ft_dispatch_load`
+and `raw.ft_pallet` — were a frozen, partial Sprint-1 snapshot (5,926 / 38,796). They are now CURRENT,
+loaded directly from the FreshTrack prod Postgres source (the first non-GraphQL dispatch ingress).
+
+- **Step 0 (committed `c25c0ef`):** load-safe recon (`ft:dispatch:recon`) → `DISPATCH_COLUMN_MAP.md`.
+  Source `public.dispatch_load`→`raw.ft_dispatch_load`, `public.pallet`→`raw.ft_pallet`, **1:1 by name,
+  0 gaps**; incremental key `last_modified_on`; pickup `actual_pickup_on`; LMB keyed to LMBFA/BF/CO/EP.
+- **Loader (`src/loaders/ft_dispatch.ts`, commit `3e51ca8`)** mirrors `ft_gp.ts`: keyset-paged read
+  (fetch-before-hub-connect), idempotent upsert on `id`, resumable `raw.sync_window` (streams
+  `dispatch` + `pallet`), full / `--since` (incremental by `last_modified_on`) / `--loads` (slice) modes.
+  Test consignors excluded at pull (SPEC §9.6); `location_id`/`harvest_load_id` unmodelled (SPEC §9.1/9.2).
+- **Write-target safety (hard blocker):** `assertHubTarget(pool)` runs before ANY write — aborts unless
+  `DATABASE_URL` carries the hub ref `uqzfkhsdyeokwnkpcxui` (the pooler puts the ref in the USERNAME,
+  not the host) AND the live DB exposes the view-backing tables. `connStringTargetsHub` unit-tested;
+  fires live (the load passed it). Encoded fix for the OneDrive `.env`-revert / wrong-target failure mode.
+- **Full backfill landed (live, off-peak, user-confirmed):** `dispatch=22,033 · pallet=201,852` upserted.
+  Hub now **22,033 loads / 201,894 pallets** (from 5,926 / 38,796).
+- **Lands `state_id` + `stock_boxes` + `reconsigned_boxes`** so the documented dispatched/boxes
+  redefinition is later a pure view/Cube change with NO re-load.
+
+## The redefinition finding (documented, DEFERRED per user decision)
+Step-0 discovery (ground-truth load **G5021160 / LMBCO**, validated across all 49 growers) found the
+governed dispatch definitions don't match how FreshTrack records dispatch — full writeup +
+cross-grower validation in **`DISPATCH_DEFINITION_PROPOSAL.md`** (commit `dc1d3cd`):
+- **"dispatched" = `actual_pickup_on IS NOT NULL`** is barely-captured (null on 85% of Paid / 98% of In
+  Transit; **23 of 49 growers at 0%**). The reliable signal is `dispatch_load_state.sequence >= 5`
+  (Shipped+); it agrees with `actual_pickup_on` **99.4%** where that exists (17 contradictions of 2,953).
+- **"boxes" = `pallet.box_count`** is own-stock only (`== stock_boxes` 100% of pallets); reconsigned
+  cartons live in `reconsigned_boxes` (the 1,200 on G5021160). Correct = `stock_boxes + reconsigned_boxes`.
+- Impact: **22 of 49 active growers are invisible** on today's dashboard (LMB is one); dispatched loads
+  ×2.6, boxes +44% — stock-only growers unchanged, reconsignment growers corrected.
+- **User decision:** do the raw backfill now (lands all the fields); HOLD the view/Cube redefinition as
+  the documented next step (needs ops sign-off on the seq≥5 threshold + a stock-load box validation).
+
+## Evidence (runnable, against the live hub)
+- `npm run ft:dispatch:reconcile` — **PASS**: loads **22,033/22,033 (0.00%)**, pallets **201,894/201,852
+  (+0.02%)**, Σnet_weight +0.01%, Σboxes +0.02%; `max(dispatched_on)` = **2026-06-27** (current, was
+  2025-07-15). The +42 pallet residual = upsert-only backfill doesn't hard-delete pallets that vanished
+  from the source (within tolerance; surfaced).
+- `npm run ft:dispatch:rls` — **7/7**: internal sees all 44,392 (37 growers); grower A→15,270 (0 of B),
+  B→7,965 (0 of A); no-claim→0; forged top-level→0; filter cannot widen (A→B=0). Same app_metadata-only
+  fail-closed contract as 0008/0010.
+- **Idempotent:** slice re-run grew 0 rows; **incremental** `--since=2026-06-23` picked up only 198 loads
+  / 781 pallets (by `last_modified_on`), `sync_window` both streams `done`; a 2nd incremental left counts
+  unchanged (22,033 / 201,894).
+- **LMB landed in `raw`:** 672 loads (LMBBF 40 · LMBCO 317 · LMBEP 303 · LMBFA 12), scheduled pickups
+  current through today. Via the *current* view: still 22 rows @ 2025-07-15 / 0 boxes — the governed-
+  definition limitation, deferred to the redefinition (NOT a load failure; the data is present).
+
+## Test status
+- `npm run typecheck` clean · `npm test` **72/72** (+8 new: spec 1:1 map, view-column coverage,
+  redefinition-field landing, ::text dates, `connStringTargetsHub` host-vs-user gating).
+- **No regression (live):** `cube:reconcile` **471/471** · `cube:rls` **12/12** · `cube:settlement`
+  **7/7** · `cube:gp` **9/9** · `ns:reconcile` PASS · `ns:rls` **7/7** · `ns:parity` **5/5** ·
+  `ft:gp:reconcile` PASS (0 drift, 1170/1206) · `ft:gp:parity` **5/5** · `ft:gp:rls` **14/14**. The
+  dispatch cube grew to reflect the backfill (internal pallet total 38,322→42,336) and still reconciles.
+
+## What is NOT done (deferred — not faked)
+- **The LMB user-facing visibility AC is NOT met by the backfill alone, and cannot be** — the source
+  caps LMB at `actual_pickup_on` 2025-07-15 and records boxes in `reconsigned_boxes`, not `box_count`.
+  The DATA landed (672 LMB loads); the VIEW visibility needs the dispatched/boxes redefinition. Deferred
+  per the user's explicit decision (option A: backfill now, redefinition next).
+- **The redefinition itself** (view + Cube): designed in `DISPATCH_DEFINITION_PROPOSAL.md`; pending ops
+  sign-off on the `seq>=5` "shipped" threshold and a stock-load box-formula validation.
+- `core.fact_dispatch` conformance layer (raw→view-direct is the current architecture; out of scope).
+
+## Known issues / notes
+- **+42-pallet residual** (hub 201,894 > source 201,852): the loader upserts but never hard-deletes, so
+  pallets removed from the source (archived/deleted/reconsigned-away since Sprint 1) linger. Within the
+  2% reconcile tolerance; a "prune vanished ids" pass could close it if exact parity is ever required.
+- **Legacy `pallet` sync_window stream:** the old GraphQL loader wrote weekly `pallet` windows (through
+  2026-06-19), so SPRINT.md's "no dispatch stream has ever run" is slightly off — the old path wrote
+  windows yet left the tables partial. The new Postgres loader uses distinct window_starts (1970-01-01
+  full, 1970-01-02 slice, the `--since` date for incremental) so the two never collide.
+- **GP slice latent bug (not fixed — out of scope):** `ft_gp.ts` slice passes `window_start='slice:N'`
+  into a `timestamptz` column and would error; the dispatch loader uses a real sentinel (`1970-01-02`).
+- **Push needs the `mackaysmarketing` PAT** (per CLAUDE.md) — not available in-session; commits are local
+  until pushed. Do NOT declare done on an unpushed commit (the Sprint-6 `bfaed42` lesson).
+
+## Files changed (Sprint 7 build)
+- `src/lib/ft_dispatch_specs.ts`, `src/lib/db.ts` (`assertHubTarget`/`connStringTargetsHub`),
+  `src/loaders/ft_dispatch.ts`, `tests/ft_dispatch_specs.test.ts`
+- `scripts/ft_dispatch_{recon,reconcile,rls_proof,order_lookup,lmb_probe,box_probe,status_probe,definition_evidence,cross_grower_validation}.ts`
+- `DISPATCH_COLUMN_MAP.md`, `DISPATCH_DEFINITION_PROPOSAL.md`, `package.json`, `HANDOFF.md`, `SPRINT.md`
+
+## Exact next step
+Build the additive redefinition (Option C in `DISPATCH_DEFINITION_PROPOSAL.md`), after ops confirms
+`seq>=5` is the right "has-shipped" line and a stock-load portal screen validates `stock+reconsigned`
+boxes: land `core.dim_dispatch_state` (mirror `gp_status`), add a `semantic.grower_dispatch_shipped`
+view + RLS, and new additive Cube measures (`shipped_load_count`, `boxes_packed`) + dims
+(`dispatch_state`, `effective_dispatched_on`). LMB and the 22 hidden growers then surface, existing
+metrics untouched.
+
+---
+
 # Handoff (Sprint 6 BUILD): FreshTrack GP settlement — load-grain settlement + cross-source reconcile
 Date: 2026-06-23
 Session type: Build (GP settlement onboarded as the 3rd source / 2nd settlement view; raw→core→semantic→Cube; RLS + internal + cross-source reconciliation proven live)
