@@ -19,6 +19,7 @@
     "ft:db:explore": "node --experimental-strip-types scripts/ft_db_explore.ts",
     "ft:db:gp-profile": "node --experimental-strip-types scripts/ft_db_gp_profile.ts",
     "ft:db:charge-profile": "node --experimental-strip-types scripts/ft_db_charge_profile.ts",
+    "ft:dispatch:recon": "node --experimental-strip-types scripts/ft_dispatch_recon.ts",
     "ft:gp:load": "node --experimental-strip-types src/loaders/ft_gp.ts",
     "ft:gp:verify": "node --experimental-strip-types scripts/ft_gp_verify.ts",
     "ft:gp:core": "node --experimental-strip-types src/loaders/ft_gp_core.ts",
