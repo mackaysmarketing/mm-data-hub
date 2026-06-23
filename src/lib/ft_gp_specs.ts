@@ -152,3 +152,102 @@ export const ftGpPaymentSpec: FtSpec = {
     { col: 'ext_link', key: 'ext_link', kind: 'text' },
   ],
 };
+
+// ── raw.ft_charge_type (taxonomy dim, Sprint 6) ──────────────────────────────
+export const ftChargeTypeSpec: FtSpec = {
+  schema: 'raw', table: 'ft_charge_type', idColumn: 'id', withRaw: true,
+  columns: [
+    { col: 'id', key: 'id', kind: 'uuid' },
+    { col: 'code', key: 'code', kind: 'text' },
+    { col: 'name', key: 'name', kind: 'text' },
+    { col: 'scope', key: 'scope', kind: 'text' },
+    { col: 'account_code', key: 'account_code', kind: 'text' },
+    { col: 'is_deductible', key: 'is_deductible', kind: 'bool' },
+    { col: 'is_active', key: 'is_active', kind: 'bool' },
+    { col: 'sequence', key: 'sequence', kind: 'numeric' },
+    { col: 'description', key: 'description', kind: 'text' },
+    { col: 'netsuite_id', key: 'netsuite_id', kind: 'text' },
+    { col: 'ext_link', key: 'ext_link', kind: 'text' },
+    { col: 'created_on', key: 'created_on', kind: 'timestamptz', select: 'created_on::text' },
+    { col: 'last_modified_on', key: 'last_modified_on', kind: 'timestamptz', select: 'last_modified_on::text' },
+  ],
+};
+
+// ── raw.ft_charge (rate-card dim, Sprint 6) ──────────────────────────────────
+export const ftChargeSpec: FtSpec = {
+  schema: 'raw', table: 'ft_charge', idColumn: 'id', withRaw: true,
+  columns: [
+    { col: 'id', key: 'id', kind: 'uuid' },
+    { col: 'name', key: 'name', kind: 'text' },
+    { col: 'vat_info', key: 'vat_info', kind: 'text' },
+    { col: 'account_code', key: 'account_code', kind: 'text' },
+    { col: 'charge_type_id', key: 'charge_type_id', kind: 'uuid' },
+    { col: 'consignor_id', key: 'consignor_id', kind: 'uuid' },
+    { col: 'product_id', key: 'product_id', kind: 'uuid' },
+    { col: 'crop_id', key: 'crop_id', kind: 'uuid' },
+    { col: 'market_area_id', key: 'market_area_id', kind: 'uuid' },
+    { col: 'is_active', key: 'is_active', kind: 'bool' },
+    { col: 'sequence', key: 'sequence', kind: 'numeric' },
+    { col: 'netsuite_id', key: 'netsuite_id', kind: 'text' },
+    { col: 'ext_link', key: 'ext_link', kind: 'text' },
+    { col: 'ext_code', key: 'ext_code', kind: 'text' },
+    { col: 'created_on', key: 'created_on', kind: 'timestamptz', select: 'created_on::text' },
+    { col: 'last_modified_on', key: 'last_modified_on', kind: 'timestamptz', select: 'last_modified_on::text' },
+  ],
+};
+
+// ── raw.ft_gp_status (PA/PD/DR dim, Sprint 6) ────────────────────────────────
+export const ftGpStatusSpec: FtSpec = {
+  schema: 'raw', table: 'ft_gp_status', idColumn: 'id', withRaw: true,
+  columns: [
+    { col: 'id', key: 'id', kind: 'uuid' },
+    { col: 'code', key: 'code', kind: 'text' },
+    { col: 'name', key: 'name', kind: 'text' },
+    { col: 'sequence', key: 'sequence', kind: 'numeric' },
+    { col: 'created_on', key: 'created_on', kind: 'timestamptz', select: 'created_on::text' },
+    { col: 'last_modified_on', key: 'last_modified_on', kind: 'timestamptz', select: 'last_modified_on::text' },
+  ],
+};
+
+// ── raw.ft_charge_applied (the charge ledger, Sprint 6) — faithful all-36-cols, no _raw ──
+export const ftChargeAppliedSpec: FtSpec = {
+  schema: 'raw', table: 'ft_charge_applied', idColumn: 'id', withRaw: false,
+  columns: [
+    { col: 'id', key: 'id', kind: 'uuid' },
+    { col: 'text_1', key: 'text_1', kind: 'text' },
+    { col: 'text_2', key: 'text_2', kind: 'text' },
+    { col: 'text_3', key: 'text_3', kind: 'text' },
+    { col: 'account_code', key: 'account_code', kind: 'text' },
+    { col: 'quantity_value', key: 'quantity_value', kind: 'numeric' },
+    { col: 'quantity_unit', key: 'quantity_unit', kind: 'text' },
+    { col: 'amount_value', key: 'amount_value', kind: 'numeric' },
+    { col: 'amount_currency', key: 'amount_currency', kind: 'text' },
+    { col: 'total_amount_value', key: 'total_amount_value', kind: 'numeric' },
+    { col: 'total_amount_currency', key: 'total_amount_currency', kind: 'text' },
+    { col: 'vat_info', key: 'vat_info', kind: 'text' },
+    { col: 'applied_on', key: 'applied_on', kind: 'timestamptz', select: 'applied_on::text' },
+    { col: 'created_on', key: 'created_on', kind: 'timestamptz', select: 'created_on::text' },
+    { col: 'last_modified_on', key: 'last_modified_on', kind: 'timestamptz', select: 'last_modified_on::text' },
+    { col: 'created_on_auto', key: 'created_on_auto', kind: 'timestamptz', select: 'created_on_auto::text' },
+    { col: 'is_active', key: 'is_active', kind: 'bool' },
+    { col: 'is_deductible', key: 'is_deductible', kind: 'bool' },
+    { col: 'is_auto', key: 'is_auto', kind: 'bool' },
+    { col: 'reference', key: 'reference', kind: 'text' },
+    { col: 'ext_code', key: 'ext_code', kind: 'text' },
+    { col: 'box_id', key: 'box_id', kind: 'uuid' },
+    { col: 'charge_id', key: 'charge_id', kind: 'uuid' },
+    { col: 'dispatch_load_id', key: 'dispatch_load_id', kind: 'uuid' },
+    { col: 'original_dispatch_load_id', key: 'original_dispatch_load_id', kind: 'uuid' },
+    { col: 'harvest_load_id', key: 'harvest_load_id', kind: 'uuid' },
+    { col: 'harvest_load_bin_id', key: 'harvest_load_bin_id', kind: 'uuid' },
+    { col: 'order_id', key: 'order_id', kind: 'uuid' },
+    { col: 'pallet_id', key: 'pallet_id', kind: 'uuid' },
+    { col: 'product_id', key: 'product_id', kind: 'uuid' },
+    { col: 'gp_detail_id', key: 'gp_detail_id', kind: 'uuid' },
+    { col: 'gp_schedule_id', key: 'gp_schedule_id', kind: 'uuid' },
+    { col: 'gp_payment_id', key: 'gp_payment_id', kind: 'uuid' },
+    { col: 'gp_group_id', key: 'gp_group_id', kind: 'uuid' },
+    { col: 'supplier_id', key: 'supplier_id', kind: 'uuid' },
+    { col: 'marketer_id', key: 'marketer_id', kind: 'uuid' },
+  ],
+};
