@@ -1,3 +1,74 @@
+# Handoff (Sprint 7 CLOSE): LMB Farms dispatch backfill — sync gap closed + origin verified
+Date: 2026-06-29
+Session type: Fix / Verification (incremental backfill of the LMB gap + read-only reconciliation
+against the live FreshTrack source; no schema change, no new code committed)
+
+## What was completed
+The LMB Farms dispatch sync gap in `raw` is closed and verified against the live FreshTrack source.
+
+- **Backfill run** — tested Sprint 7 loader, incremental `--since=2026-06-22`, into
+  `raw.ft_dispatch_load` + `raw.ft_pallet` (data only, no schema change):
+  `dispatch: seen=1245 upserted=1245` · `pallet: seen=6667 upserted=6667` · exit 0.
+- **Completeness vs live source** (LMB sheds LMBCO/LMBBF/LMBEP/LMBFA):
+  | Entity | Source (live FreshTrack) | Hub `raw` | Directional gap (source→hub) |
+  |---|---|---|---|
+  | LMB loads | 684 | 684 | **0 — exact** |
+  | LMB pallets | 12,251 | 12,271 | **0** (`src_only=0`, `in_both=12,251`) |
+  Every live-source LMB load and pallet is now in `raw`.
+- **Sync high-water advanced:** `max(window_end)` for the `dispatch`/`pallet` streams
+  2026-06-23 13:49 → **2026-06-29 10:11**.
+- **Integrity floor held:** null-`shed_id` pallets in the LMB set = **0**.
+- **Origin semantics verified:** `shed_id` tracks pallet origin, **not** the load consignor —
+  11,875 matched pallets, all resolve to an LMB shed in `raw.ft_entity`, **0** rows where
+  `shed_id = consignor_id`. Reconsignment proven (LMBFA-packed pallets riding non-LMB consignor
+  loads still carry the LMBFA `shed_id`).
+
+## Test status
+Read-only verification only (no unit/integration suite run this session):
+- Origin correctness — **PASS** (10-row sample join + full-set aggregate; `shed ≠ consignor` every row).
+- Completeness vs live source — **PASS** (`src_only = 0`; loads exact 684 = 684).
+- Integrity — **PASS** (null-shed floor 0; 0 orphaned `dispatch_load_id`; 68 LMB pallets carry a
+  null `dispatch_load_id` = unassigned/field, surfaced not failed).
+
+## What is NOT done (carry-forward — spans sessions)
+- **+20 hub-excess LMB pallets** — id-level diff proves all 20 are **hard-deleted in source** and
+  retained by the **upsert-only loader** (no delete propagation). A design decision, **not data
+  loss**. Purging needs a separate delete-reconciliation (tombstone) step.
+- **`shed_id` dies at `raw`** — `semantic.grower_dispatch_detail` carries **no farm origin** (keyed
+  on `grower_key` only); `core.load_box_reconciliation` has none either. Carrying pallet origin
+  downstream is the next sprint.
+- **HEAD loader is blocked** — HEAD carries the Sprint 8 draft `dispatch_state` stream, but
+  `raw.ft_dispatch_load_state` is **not applied** (migration `0021` pending), so a plain
+  `npm run ft:dispatch:load` aborts before loading. Use the tested Sprint 7 loader
+  (`git show 3e51ca8:src/loaders/ft_dispatch.ts`) or apply `0021` first. (Memory:
+  `head-dispatch-loader-sprint8-blocker`.)
+- **RLS gate** — 17 `raw`/`core` tables have RLS disabled (Supabase advisor: critical). Treat as a
+  **Sprint 0 hard gate**: policy-first, its own session, **no auto-enable** (enabling without
+  policies blocks all access).
+
+## Known issues / notes
+- Loader is **upsert-only** — source hard-deletes / shed-reassignments are not propagated; the hub
+  can exceed source (here +20 LMB pallets).
+- LMB `actual_pickup_on` is capped at 2025-07-15 in source; `packed_on` is the reliable recency
+  signal (hub now current through 2026-06-28).
+- **SPRINT.md anomaly** — the working-tree `SPRINT.md` was modified out-of-session into a generic
+  template that reintroduces the disproven "core dispatch table / raw→public→core silver" framing.
+  Left **unstaged and NOT committed**; recommend reverting to HEAD (the accurate Sprint 7 spec).
+
+## Exact next step
+Carry `shed_id` (pallet origin) through `core` into `semantic` so farm origin reaches the analytical
+layer — `semantic.grower_dispatch_detail` currently drops it.
+
+## Files changed
+- **None in code.** The backfill wrote only to `raw.ft_dispatch_load` + `raw.ft_pallet` (data, not
+  schema). The working-tree loader was swapped to the tested Sprint 7 version for the run and
+  **restored to HEAD** (verified clean). Read-only verification scripts live in the temp scratchpad,
+  outside the repo.
+- **HANDOFF.md** (this entry) — the only repo change committed this session. (`SPRINT.md` modified
+  out-of-session — left unstaged, not committed.)
+
+---
+
 # Handoff (Sprint 7 BUILD): FreshTrack dispatch DB backfill — warehouse tables made current
 Date: 2026-06-23
 Session type: Build (new canonical dispatch loader from the FreshTrack prod Postgres source into the
