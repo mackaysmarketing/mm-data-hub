@@ -29,19 +29,27 @@ Phase A (the `semantic.grower_dispatch_shipped` view + `core.dim_dispatch_state`
 `views/dispatch.yml`), `semantic.grower_dispatch_detail`, and the existing `VIEW_GROWER_KEYS` entries.
 `git diff` touches only the single new cube.js line + package.json (new script) — verified.
 
-## Deploy-free verification (done now, before deploy)
-- **cube.js diff** = exactly one additive line registering `dispatch_shipped.grower_key`; existing entries
-  byte-for-byte intact (`git diff cube/cube.js`).
+## Deploy-free verification (done now, before deploy — real evidence pasted in session)
+- **(8a) cube.js anchor** — `VIEW_GROWER_KEYS` contains `dispatch_shipped: 'dispatch_shipped.grower_key'`
+  (the one security-critical line); existing entries byte-for-byte intact (`git diff cube/cube.js` = +1 line).
 - **Existing dispatch surface untouched** — no edit to `dispatch_loads.yml` / `dispatch_pallets.yml` /
   `views/dispatch.yml` (not in `git status`).
 - **`npm run typecheck`** clean; **`npm test`** → 72/72 pass.
-- **Semantic RLS posture (live, read-only via MCP):** both `grower_dispatch_shipped` and
-  `grower_dispatch_detail` are `security_invoker=true` (criterion 8's policy-parity leg — re-asserted in the
-  proof script against the DB).
-- **Source figure the surface must reproduce (criterion 10, live now):**
-  `semantic.grower_dispatch_shipped` → `count(distinct load_id) = 18,670` (all-time; 69 growers; boxes
-  11,004,836). The proof asserts `shipped_load_count` (internal `/load`) **equals this same-session source
-  count** — equality-to-source, NOT a hard-coded literal (the goal's "~8,035" was a stale 2026-only basis).
+- **(8b) Semantic RLS posture (live, read-only):** both `grower_dispatch_shipped` and
+  `grower_dispatch_detail` are `security_invoker=true` — identical policy. (Re-asserted in the proof.)
+- **(10b) Live `dispatch` /meta BASELINE** (governed `/meta`, internal context) = **6 measures**
+  (`line_count, load_count, net_weight_capture_rate, net_weight_dispatched, pallet_count,
+  pallets_with_net_weight`) + **11 dimensions** (`consignee_key, crop, dispatched_on, grower_code,
+  grower_key, grower_name, origin_shed_id, origin_shed_name, pack_week, product, variety`). The post-deploy
+  run asserts this is unchanged.
+- **(10c) Source target** — `semantic.grower_dispatch_shipped` → `count(distinct load_id) = 18,670`
+  (all-time; 69 growers; boxes 11,004,836). The proof asserts `shipped_load_count` (internal `/load`)
+  **equals this same-session source count** — equality-to-source, NOT a hard-coded literal (the goal's
+  "~8,035" was a stale 2026-only basis).
+- **Deploy genuinely required** — a live `/meta` probe confirms the deployment currently exposes only
+  `[dispatch, gp_settlement, gp_settlement_load, settlement]`; **`dispatch_shipped` is absent**, so its
+  `/load`/`/meta` legs are impossible until the deploy. `.env` (CUBE_API_URL/SECRET + DATABASE_URL) is now in
+  place in this checkout, so `npm run cube:shipped` runs end-to-end the instant the model is live.
 
 ## Deploy gate (PENDING)
 Only prod deployment 1 ("MM Data Hub") is queryable — no reachable dev. Per the gate: built + committed +
