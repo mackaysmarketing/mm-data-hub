@@ -8,7 +8,7 @@ cubes:
       Buy / undispatched / test-consignor rows, regardless of how a consumer queries.
       net_weight_value is nullable and produce-dependent — summed/averaged with nulls
       EXCLUDED, never coalesced to 0 (SPEC §9.8). location_id and harvest lineage not modelled.
-    public: false
+    public: false  # SECURITY-RELEVANT: RLS depends on this. Base cube is NOT in cube.js VIEW_GROWER_KEYS, so queryRewrite adds no tenant scope filter — public:false is what keeps it unreachable. Do NOT set public:true without adding a VIEW_GROWER_KEYS anchor. Guard: tests/cube_rls_public_guard.test.ts
 
     sql: >
       SELECT

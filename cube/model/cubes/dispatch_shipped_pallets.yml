@@ -13,7 +13,7 @@ cubes:
       (order_type = 'S'), Shipped+ (sequence >= 5), non-test consignor (dim_grower.is_test = false).
       Grower attribution = the LOAD's consignor_id (grower_key; SPEC §9.1) — never harvest lineage.
       The dispatch line (sequence >= 5) is a single ops-tunable condition in the view, not here.
-    public: false
+    public: false  # SECURITY-RELEVANT: RLS depends on this. Base cube is NOT in cube.js VIEW_GROWER_KEYS, so queryRewrite adds no tenant scope filter — public:false is what keeps it unreachable. Do NOT set public:true without adding a VIEW_GROWER_KEYS anchor. Guard: tests/cube_rls_public_guard.test.ts
 
     # Read the governed shipped view directly. uuid columns are cast ::text to match the
     # grower_key / origin_shed_id string-dimension pattern used across the dispatch cubes.
