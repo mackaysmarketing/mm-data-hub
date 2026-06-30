@@ -87,6 +87,9 @@ coalesce(actual, scheduled)`), because **the hub does not land `created_on` at a
   and vice-versa), so the flip-count (47/21 vs 49/22) and the no-pallet/zero-box counts (9/19 vs ≤6/≤16) legitimately differ.
 - **Reproducing the proposal's exact 4 & 6 is impossible inside the hub** (no `created_on`) and not runnable in this session
   (no `.env`/`FRESHTRACK_DATABASE_URL`, `pg`/`dotenv` not installed → the replica-based script cannot execute here).
+- **The FreshTrack GraphQL API also cannot supply `created_on`**: `DispatchLoadNode` has no `createdOn` field and `dispatchLoads`
+  has no `filterCreatedOn*` argument (verified in the introspected schema). `created_on` lives ONLY on the replica's
+  `public.dispatch_load` SQL table. Every available channel (hub columns, `_raw`, GraphQL, replica SQL-without-creds) exhausted.
 - Closing the gap to the literal numbers would require either landing `created_on` in `raw.ft_dispatch_load` (a raw-schema
   change + re-load — **explicitly out of scope**: "raw tables not mutated") or running the replica script with live creds.
 - The shipped hub surface is correct on its own (pickup-year) basis; Tim accepted these governed values as ground truth.
