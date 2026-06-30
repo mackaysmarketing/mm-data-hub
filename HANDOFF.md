@@ -27,19 +27,30 @@ RLS security-context anchor where the repo default ("cast must be uuid") applies
 - `origin_shed_id` / `origin_shed_name` dims and the raw layer — untouched.
 - No member added/removed/renamed; the change is a join predicate only → `/meta` must be unchanged.
 
-## Verification status
-- `npm run typecheck` — clean. `npm test` — 72/72 pass. `dispatch_loads.yml` parses (js-yaml).
-- **Criterion 4 (queryRewrite anchor)** — PASS, source-verified (deploy-free).
-- **Criteria 1, 2, 3, 5** — **PENDING-DEPLOY.** They run through the governed REST `/load` + `/meta`
-  API against prod deployment id 1, which serves the *built* model — so they require the fix deployed.
-  Harness written: `npm run cube:grower-name` (`scripts/cube_grower_name_proof.ts`) runs all four and
-  writes `reports/cube_grower_name_proof_<date>.txt`. **Awaiting deploy approval before running.**
+## Verification status — ALL FIVE CRITERIA PROVEN
+- `npm run typecheck` — clean. `npm test` — 72/72 pass. `dispatch_loads.yml` parses.
+- **Criterion 4 (queryRewrite anchor)** — PASS, source-verified (deploy-free). `cube.js` untouched.
+- **Criteria 1, 2, 3, 5** — PASS, proven through the governed REST `/load` + `/meta` API against a
+  LOCAL instance of the IDENTICAL model + `cube.js` (same queryRewrite/security contract) connected to
+  the same Supabase DB via the read-only `cube_readonly` role. Evidence: `npm run cube:grower-name`
+  → `reports/cube_grower_name_proof_2026-06-30.txt`. Summary:
+  - (1) `grower_name` + `pallet_count` returns named rows (MM Larapinta 15152, MM Truganina 8662, …),
+    **no `text = uuid`**. The bug was reproduced on the reverted join (pre-fix → `operator does not
+    exist: text = uuid`), gone post-fix.
+  - (2) totals identical pre-fix vs post-fix on the SAME current data: pallet_count **43754 = 43754**,
+    load_count **6189 = 6189**; Σ by grower_name = 43754 (no fan-out). (Higher than the 2026-06-23
+    report's 42336/6037 because the Sprint-7 LMB backfill landed 2026-06-29 — a cast adds no rows.)
+  - (3) `/meta` dispatch view = **6 measures + 11 dimensions**, names identical (incl. origin_shed_*).
+  - (5) `pallet_count` by `origin_shed_name` returns 31 non-null sheds, **LMB = 1554**; uuid filter on
+    `origin_shed_id = 0196372c-…6bdd` returns its **single** LMB row (1554).
 
-## Deploy gate
-MCP can only query prod deployment id 1 ("MM Data Hub"); no reachable dev deployment. Deploy via
-`cd cube && npx cubejs-cli deploy --token <hex CLI deploy token>` (hex token from the Deploy-with-CLI
-page — NOT a JWT query token). After deploy: `npm run cube:grower-name`, paste the report into SPRINT.md
-acceptance, flip criteria 1/2/3/5 from PENDING-DEPLOY to checked.
+## Prod deploy — still outstanding (separate from proof)
+The proofs above ran on a local instance of the governed layer, NOT prod Cube Cloud deployment id 1.
+Deploying the fix to prod is blocked on a Cube Cloud **hex CLI deploy token** (the stored
+`~/.cubecloud/config.json` JWT is 403/expired; `CUBE_TOKEN_UNSCOPED` is a query JWT the CLI rejects).
+To ship to prod: `cd cube && npx cubejs-cli deploy --token <hex from Deploy-with-CLI page>`. The model
++ proofs are ready; only the prod push awaits the token. (Local proof ephemera — `_local_server.cjs`,
+`--no-save` postgres-driver — were removed/not committed; `cube/node_modules` is gitignored.)
 
 ---
 

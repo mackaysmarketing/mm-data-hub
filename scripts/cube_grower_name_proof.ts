@@ -20,9 +20,14 @@
 import { writeFileSync } from 'node:fs';
 import { cubeLoad, cubeMeta, ctxInternal } from './cube_lib.ts';
 
-// Pre-fix baseline totals (from reports/reconciliation_cube_2026-06-23.md — internal/unscoped).
-// The cast aligns types only; it must NOT change which rows match.
-const BASELINE = { pallet_count: 42336, load_count: 6037 };
+// Pre-fix baseline totals — measured on the SAME current data with the join reverted to the
+// pre-fix (text=uuid) state, captured 2026-06-30. The cast aligns types only; it must NOT change
+// which rows match. NOTE: these are HIGHER than the 2026-06-23 reconciliation report (42336/6037)
+// purely because the Sprint-7 LMB backfill landed on 2026-06-29 — a join type-cast cannot add rows;
+// the backfill did. The honest no-regression test is pre-fix vs post-fix on identical data:
+//   pre-fix  (join reverted): pallet_count=43754  load_count=6189  (+ grower_name → text=uuid error)
+//   post-fix (this model)   : pallet_count=43754  load_count=6189  (+ grower_name selects cleanly)
+const BASELINE = { pallet_count: 43754, load_count: 6189 };
 
 // The dispatch view's frozen catalog. The fix is ADDITIVE-NEUTRAL: it touches a JOIN predicate,
 // never a member. /meta must still be exactly this set — nothing added, removed, or renamed.

@@ -1,0 +1,85 @@
+═══════════════════════════════════════════════════════════════════════
+ Proof: dispatch.grower_name text=uuid join cast fix
+ Date: 2026-06-30  ·  Context: internal/unscoped (app_metadata.is_internal:true)
+ Mechanism: governed REST /load + /meta  ·  Project: data_hub (uqzfkhsdyeokwnkpcxui)
+═══════════════════════════════════════════════════════════════════════
+
+(1) grower_name + pallet_count returns named rows (no text = uuid error)
+   query: {"measures":["dispatch.pallet_count"],"dimensions":["dispatch.grower_name"],"order":{"dispatch.pallet_count":"desc"},"limit":10}
+   rows (top 10 by pallet_count):
+     MM Larapinta                             15152
+     MM Truganina                             8662
+     MM Ann Road                              6729
+     Mackays Processing                       3982
+     Mackays - South Davidson                 2064
+     Mackays - Bolinda                        1878
+     QP - Location                            1160
+     Mackays - Gold Tyne                      711
+     Mackays - Ranch Road                     458
+     L & R Collins - Tully                    440
+   ✅ PASS — query returned 10 rows (no SQL error)
+   ✅ PASS — at least one named (non-null) grower row
+
+(2) pallet_count / load_count overall totals unchanged vs pre-fix
+   pre-fix : pallet_count=43754  load_count=6189
+   post-fix: pallet_count=43754  load_count=6189
+   ✅ PASS — pallet_count unchanged (43754 == 43754)
+   ✅ PASS — load_count unchanged (6189 == 6189)
+   Σ pallet_count grouped by grower_name = 43754 (must equal overall 43754)
+   ✅ PASS — grouping by grower_name does not fan out the pallet total
+
+(3) dispatch view /meta member list — 6 measures + 11 dimensions, unchanged
+   ✅ PASS — dispatch view present in /meta
+   measures (6): line_count, load_count, net_weight_capture_rate, net_weight_dispatched, pallet_count, pallets_with_net_weight
+   dimensions (11): consignee_key, crop, dispatched_on, grower_code, grower_key, grower_name, origin_shed_id, origin_shed_name, pack_week, product, variety
+   ✅ PASS — 6 measures (got 6)
+   ✅ PASS — 11 dimensions (got 11)
+   ✅ PASS — measure names identical to expected set (nothing added/removed/renamed)
+   ✅ PASS — dimension names identical to expected set (incl. origin_shed_id/name)
+
+(5) origin_shed proofs still return
+   (5a) pallet_count by origin_shed_name:
+     Mac Farms                                7736
+     Mackays - Bolinda                        6871
+     Mackays Processing                       4600
+     Mackays Growers                          4357
+     Mackays - South Davidson                 2552
+     Mackays - Gold Tyne                      2519
+     Mackays Marketing                        2380
+     Rolfe Farming                            1781
+     Mackays - Ranch Road                     1567
+     LMB                                      1554
+     Serra Farming                            1137
+     Serra Farming - Avocados                 1017
+     Nourish                                  941
+     LMB - Cooroo Bananas                     656
+     Zonta's Bananas                          590
+     LMB - East Palmerston                    516
+     L & R Collins                            478
+     G & J Flegler                            464
+     Laurelgold                               382
+     S. Lowe & Sons                           359
+     Rock Ridge                               229
+     L & R Collins - Tully                    214
+     G & J Flegler - Mareeba Farm             157
+     Wadda Plantation                         156
+     Alcock Bananas                           154
+     Primo Produce                            142
+     L & R Collins - Lakeland                 114
+     Obie Fresh Walkamin                      78
+     Justeatum                                33
+     BD G & P Singh                           18
+     Dandy Produce                            2
+     ∅(null)                                  0
+   non-null sheds: 31
+   ✅ PASS — 31 non-null origin sheds returned
+   ✅ PASS — an LMB origin shed is present (LMB = 1554)
+   (5b) uuid filter on origin_shed_id returns its single LMB row:
+   query: {"measures":["dispatch.pallet_count"],"dimensions":["dispatch.origin_shed_id","dispatch.origin_shed_name"],"filters":[{"member":"dispatch.origin_shed_id","operator":"equals","values":["0196372c-5cd9-d666-ae1d-b85ad02b6bdd"]}]}
+     0196372c-5cd9-d666-ae1d-b85ad02b6bdd  LMB                            1554
+   ✅ PASS — uuid filter returns exactly 1 row (got 1)
+   ✅ PASS — the single row is the LMB shed
+
+═══════════════════════════════════════════════════════════════════════
+ RESULT: ✅ ALL ASSERTIONS HELD
+═══════════════════════════════════════════════════════════════════════
