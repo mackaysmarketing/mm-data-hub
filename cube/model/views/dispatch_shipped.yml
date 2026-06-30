@@ -1,0 +1,47 @@
+views:
+  - name: dispatch_shipped
+    title: Dispatch (Shipped)
+    description: >-
+      Governed SHIPPED-state dispatch metric surface — additive sibling of the `dispatch` view,
+      consumed by Steep and the Hub MCP. The base cube is private; everything flows through this
+      view so the corrected definitions and RLS cannot be bypassed. Built over the semantic view
+      semantic.grower_dispatch_shipped (migration 0021).
+
+      Corrected definitions (vs the existing `dispatch` view's actual_pickup_on basis):
+        • dispatched      = load reached Shipped-or-later (dim_dispatch_state.sequence >= 5)
+        • dispatched date = effective_dispatched_on = coalesce(actual_pickup_on, scheduled_pickup_on)
+        • boxes           = boxes_packed = stock_boxes + reconsigned_boxes (portal "Boxes Packed")
+
+      Baked-in filters every consumer inherits (encoded in the view): order_type = 'S' (Sell only),
+      dispatch_state.sequence >= 5 (Shipped+), non-test consignor.
+
+      RLS: every query is row-filtered to the caller's consignor via the security context
+      (app_metadata.consignor_id) in cube.js queryRewrite — the SAME fail-closed, app_metadata-only
+      contract as `dispatch`/`settlement`. dispatch_shipped.grower_key is its RLS anchor (registered
+      in VIEW_GROWER_KEYS). Internal context (is_internal) is unscoped. Neither → 0 rows. No
+      dimension selection can widen a grower's scope.
+
+      Contract discipline: ADD-ONLY and SEPARATE. This view does NOT touch the existing `dispatch`
+      view or any existing metric — it is a distinct surface consumers OPT IN to. Grain safety:
+      nothing below pallet / line grain; location_id and harvest-load lineage are not modelled.
+    public: true
+
+    cubes:
+      # ── Shipped measures + the load/state/date/origin dimensions (incl. the RLS anchor) ──
+      - join_path: dispatch_shipped_pallets
+        includes:
+          - shipped_load_count
+          - boxes_packed
+          - pallet_count_shipped
+          - net_weight_shipped
+          - grower_key
+          - dispatch_state
+          - effective_dispatched_on
+          - origin_shed_id
+          - origin_shed_name
+
+      # ── Readable grower attributes (visible to the internal/unscoped context) ──
+      - join_path: dispatch_shipped_pallets.dim_grower
+        includes:
+          - grower_code
+          - grower_name

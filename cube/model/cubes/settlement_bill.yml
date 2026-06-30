@@ -8,7 +8,7 @@ cubes:
       metric. RLS anchor: grower_key (consignor_id), scoped in cube.js queryRewrite from
       app_metadata.consignor_id (same fail-closed contract as dispatch). Deduction measures are
       signed (<= 0). Amounts are summed with nulls excluded, never coalesced to 0.
-    public: false
+    public: false  # SECURITY-RELEVANT: RLS depends on this. Base cube is NOT in cube.js VIEW_GROWER_KEYS, so queryRewrite adds no tenant scope filter — public:false is what keeps it unreachable. Do NOT set public:true without adding a VIEW_GROWER_KEYS anchor. Guard: tests/cube_rls_public_guard.test.ts
     sql_table: core.fact_settlement_bill
 
     measures:

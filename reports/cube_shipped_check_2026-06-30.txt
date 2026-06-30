@@ -1,0 +1,79 @@
+═══════════════════════════════════════════════════════════════════════
+ Cube shipped-dispatch check — additive dispatch_shipped surface (Sprint 8 Phase B)
+ Date: 2026-06-30  ·  Project: data_hub (uqzfkhsdyeokwnkpcxui)  ·  Mechanism: governed REST /load + /meta
+═══════════════════════════════════════════════════════════════════════
+
+DB source: distinct loads=18670  boxes=11004836  growers=69
+DB growers: A=MMTRU(4498 loads)  B=MMLAR(2574 loads)
+
+(8a) cube.js VIEW_GROWER_KEYS registers the new view (deploy-free source check)
+   cube.js: dispatch_shipped: 'dispatch_shipped.grower_key' present
+   ✅ PASS — VIEW_GROWER_KEYS contains dispatch_shipped: 'dispatch_shipped.grower_key'
+
+(8b) semantic.grower_dispatch_shipped RLS policy == grower_dispatch_detail (security_invoker)
+   grower_dispatch_detail     security_invoker=true
+   grower_dispatch_shipped    security_invoker=true
+   ✅ PASS — grower_dispatch_shipped is security_invoker=true
+   ✅ PASS — grower_dispatch_detail is security_invoker=true
+   ✅ PASS — both views share the SAME RLS posture
+
+(10a) /meta — dispatch_shipped view exposes the new measures + dimensions
+   ✅ PASS — dispatch_shipped view present in /meta
+   measures (4): boxes_packed, net_weight_shipped, pallet_count_shipped, shipped_load_count
+   dimensions (7): dispatch_state, effective_dispatched_on, grower_code, grower_key, grower_name, origin_shed_id, origin_shed_name
+   ✅ PASS — measure shipped_load_count present
+   ✅ PASS — measure boxes_packed present
+   ✅ PASS — dimension dispatch_state present
+   ✅ PASS — dimension effective_dispatched_on present
+   ✅ PASS — dimension grower_key present
+   ✅ PASS — dispatch_shipped measures == expected set
+   ✅ PASS — dispatch_shipped dimensions == expected set
+
+(10b) /meta — existing `dispatch` view unchanged (6 measures + 11 dimensions)
+   ✅ PASS — dispatch view present in /meta
+   measures (6): line_count, load_count, net_weight_capture_rate, net_weight_dispatched, pallet_count, pallets_with_net_weight
+   dimensions (11): consignee_key, crop, dispatched_on, grower_code, grower_key, grower_name, origin_shed_id, origin_shed_name, pack_week, product, variety
+   ✅ PASS — dispatch: 6 measures, unchanged
+   ✅ PASS — dispatch: 11 dimensions, unchanged
+
+(10c) shipped_load_count (/load, internal) EQUALS the semantic view count(distinct load_id)
+   Cube internal: shipped_load_count=18670  boxes_packed=11004836
+   DB source    : count(distinct load_id)=18670  sum(boxes)=11004836
+   ✅ PASS — shipped_load_count(18670) == source count(distinct load)(18670)
+   ✅ PASS — boxes_packed(11004836) == source sum(boxes)(11004836)
+
+(8c) internal context returns ALL growers
+   internal distinct growers via /load: 69 (DB: 69)
+   ✅ PASS — internal sees all 69 growers
+
+(8d) single-grower contexts are scoped to their own rows (strictly < internal)
+   MMTRU: 1 grower_key(s), shipped_load_count=4498 (DB 4498)
+   ✅ PASS — MMTRU sees ONLY its own grower_key
+   ✅ PASS — MMTRU shipped_load_count(4498) == its DB load count(4498)
+   ✅ PASS — MMTRU strictly fewer loads than internal (4498 < 18670)
+   MMLAR: 1 grower_key(s), shipped_load_count=2574 (DB 2574)
+   ✅ PASS — MMLAR sees ONLY its own grower_key
+   ✅ PASS — MMLAR shipped_load_count(2574) == its DB load count(2574)
+   ✅ PASS — MMLAR strictly fewer loads than internal (2574 < 18670)
+
+(8e) growers are disjoint; a filter cannot widen scope
+   ✅ PASS — A and B are distinct growers
+   MMTRU filtered to MMLAR's grower_key → 0
+   ✅ PASS — filter cannot widen scope (MMTRU→MMLAR = 0)
+
+(8f) fail-closed — no-claim and forged top-level claims see nothing
+   no-claim=0  forged top-level is_internal=0  forged top-level consignor_id=0
+   ✅ PASS — no-claim (NIL) context → 0 rows
+   ✅ PASS — forged top-level is_internal → 0 rows (app_metadata-only)
+   ✅ PASS — forged top-level consignor_id → 0 rows (app_metadata-only)
+
+(8g) grouping by grower_name does not fan out the pallet total (many_to_one join)
+   Σ pallet_count_shipped grouped by grower_name = 174711 (overall = 174711)
+   ✅ PASS — grower_name grouping does not inflate the pallet total
+
+(8h) parts do not exceed the whole
+   ✅ PASS — 4498 + 2574 ≤ 18670
+
+═══════════════════════════════════════════════════════════════════════
+ RESULT: ✅ ALL ASSERTIONS HELD (criteria 8 + 10)
+═══════════════════════════════════════════════════════════════════════
