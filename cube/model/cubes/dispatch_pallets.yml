@@ -24,10 +24,13 @@ cubes:
         p.product_description,
         p.box_count,
         p.net_weight_value,
-        p.net_weight_unit
+        p.net_weight_unit,
+        p.shed_id::text       AS origin_shed_id,
+        sh.shed_name          AS origin_shed_name
       FROM raw.ft_pallet p
       JOIN raw.ft_dispatch_load d ON d.id = p.dispatch_load_id
       JOIN core.dim_grower g ON g.consignor_id = d.consignor_id
+      LEFT JOIN core.dim_shed sh ON sh.shed_id = p.shed_id
       WHERE d.order_type = 'S'
         AND d.actual_pickup_on IS NOT NULL
         AND COALESCE(g.is_test, false) = false
@@ -126,3 +129,24 @@ cubes:
         sql: "{CUBE}.product_id"
         type: string
         public: false
+
+      # ── Farm origin (additive, mirrors semantic.grower_dispatch_detail.origin_shed_* / migration 0022) ──
+      # The pallet's OWN packing shed (raw.ft_pallet.shed_id) — independent of the load consignor
+      # (grower_key). On a reconsigned pallet origin_shed != grower. uuid cast ::text in the SELECT and
+      # typed string, matching the grower_key / product_id uuid-dimension pattern. NOT an RLS anchor —
+      # queryRewrite only ever scopes grower_key, so no filter is pushed onto this column.
+      - name: origin_shed_id
+        title: Origin Shed (shed_id)
+        description: >-
+          Farm origin = the pallet's own packing shed (raw.ft_pallet.shed_id). Distinct from
+          grower_key (the load consignor) on reconsigned pallets. uuid surfaced as text.
+        sql: "{CUBE}.origin_shed_id"
+        type: string
+
+      - name: origin_shed_name
+        title: Origin Shed Name
+        description: >-
+          Owning org name for the pallet's origin shed (core.dim_shed). Nullable when the shed has
+          no name. Labels origin_shed_id; orthogonal to the grower.
+        sql: "{CUBE}.origin_shed_name"
+        type: string

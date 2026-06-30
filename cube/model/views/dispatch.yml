@@ -44,6 +44,8 @@ views:
           - crop
           - variety
           - product
+          - origin_shed_id
+          - origin_shed_name
 
       # ── Readable grower attributes (visible to the internal/unscoped context) ─
       - join_path: dispatch_loads.dim_grower
