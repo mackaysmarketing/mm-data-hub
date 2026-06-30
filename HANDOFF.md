@@ -1,7 +1,33 @@
 # Handoff (2026-06-30): Sprint 8 Phase B — additive shipped-dispatch CUBE surface (Option C)
 Branch: `feat/dispatch-shipped-cube` (NOT pushed to main). Phase B = Cube only (deploy-gated).
-Status: **BUILT + COMMITTED — PENDING-DEPLOY.** The new model is not queryable until Tim deploys to prod
-deployment 1 ("MM Data Hub"). Criteria 8 + 10 run against prod **after** deploy via `npm run cube:shipped`.
+Status: **✅ DONE — DEPLOYED + PROVEN ON PROD.** Criteria 8 + 10 proven via the governed REST `/load` + `/meta`
+API against prod deployment 1; full evidence in `reports/cube_shipped_check_2026-06-30.txt` (ALL assertions held).
+
+## Phase B RESULT (criteria 8 + 10, governed /load + /meta, internal + 2 growers + NIL + forged)
+- **8 RLS** — anchor `dispatch_shipped: 'dispatch_shipped.grower_key'` present; `security_invoker=true` on the new
+  view == `grower_dispatch_detail`; internal sees ALL **69** growers; MMTRU scoped to its own **4,498** loads
+  (1 grower_key, == DB), MMLAR to its own **2,574** (both strictly < 18,670 internal); MMTRU filtered to MMLAR → **0**;
+  no-claim/forged-top-level-is_internal/forged-top-level-consignor → **0**; grower_name grouping does NOT fan out
+  (Σ pallet_count_shipped 174,711 == overall). No cross-grower leak.
+- **10 additive + parity** — `/meta` shows `dispatch_shipped` with 4 measures (shipped_load_count, boxes_packed,
+  pallet_count_shipped, net_weight_shipped) + 7 dims (grower_key, dispatch_state, effective_dispatched_on,
+  origin_shed_id/name, grower_code/name); existing `dispatch` `/meta` BYTE-IDENTICAL (6 measures + 11 dims);
+  `shipped_load_count` /load = **18,670** == semantic view `count(distinct load_id)` = 18,670 (same session,
+  equality-to-source); boxes_packed 11,004,836 == source.
+
+## ⚠️ Deploy incident + recovery (recorded for the log)
+The FIRST deploy (`beb6dd0`) FAILED Cube's schema compile — I had named the base cube AND the view both
+`dispatch_shipped`, which Cube rejects (`Found conflicting cube and view name`). A failed compile takes the WHOLE
+model offline, so for the duration ALL views (dispatch/settlement/gp_*) 500'd on prod. Fix `0a84603` renamed the
+base cube to `dispatch_shipped_pallets` (the view keeps the clean name, matching the convention everywhere else:
+dispatch_loads/dispatch_pallets→dispatch; settlement_bill→settlement; gp_settlement_load_fact→gp_settlement_load).
+Redeploy of `0a84603` restored all 5 views and brought up `dispatch_shipped`. **Lesson:** local typecheck/tests
+can't catch a Cube schema-compile error — only a deploy (or a local `cubejs` dev-server compile) does; a global
+cube+view name-uniqueness check is now part of the pre-deploy verification.
+
+---
+
+(Original PENDING-DEPLOY notes retained below for context.)
 
 Phase A (the `semantic.grower_dispatch_shipped` view + `core.dim_dispatch_state`, migration `0021`) is
 **applied to prod** and complete — see commit `c3c2a77` / `ca8f503` for its full record.
