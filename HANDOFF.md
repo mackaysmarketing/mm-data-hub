@@ -1,3 +1,39 @@
+# Handoff (2026-06-30, CLOSE): grower_name cast fix — independent evaluation PASSED
+Date: 2026-06-30 · Branch: `fix/dispatch-grower-name-cast` (HEAD `747f129`) — already MERGED to `main`
+via PR #2 (`origin/main` at `863b175`; this branch tip is intentionally *behind* main post-merge).
+Session type: Independent QA / sprint close. No code change — verification + DoD close only.
+
+## What was done
+Closed the one remaining open DoD item ("Independent evaluator session confirms criteria 1–5"). A
+dedicated skeptical evaluator agent re-ran every check itself against the LIVE prod Cube deployment id 1
+(`lime-lamprey.aws-us-west-2.cubecloudapp.dev`), not trusting the prior transcript. **Verdict: APPROVE.**
+
+- **Cast direction** — `dispatch_loads.yml:36` casts `{dim_grower}.consignor_id::text` (down), NOT
+  `grower_key::uuid`. Correct for a display join (grower_key is the RLS anchor; casting it up could throw
+  on a non-uuid value).
+- **5 acceptance criteria, live on prod:** (1) `grower_name`+`pallet_count` named rows, no `text = uuid`;
+  (2) `pallet_count` 43754=43754, `load_count` 6189=6189, Σ by grower_name = 43754 (no fan-out);
+  (3) `/meta` = 6 measures + 11 dimensions, nothing added/removed/renamed; (4) `cube.js` untouched by the
+  branch (verified via commit range `168f3e7..747f129` — a naive `diff origin/main` is empty for the wrong
+  reason since the branch is behind main after the merge), `queryRewrite` scopes only `grower_key`;
+  (5) `origin_shed` 31 non-null sheds, LMB=1554, single-row uuid filter returns 1554.
+- **Build/tests (re-run):** `typecheck` clean · `npm test` 72/72 · `npm run cube:grower-name` all assertions
+  held (exit 0). Proof harness confirmed genuine (HS256-signed JWT → real `/load`+`/meta`, no mocks).
+
+## What is NOT done / notes
+- **Not pushed from this session** — the close commit lives on the local branch only (push needs the
+  `mackaysmarketing` PAT, not available in-session). The *fix itself* is already on `origin/main` via PR #2.
+- **2 untracked report files** in the working tree (`reports/mcp_proof_2026-06-23.txt`,
+  `reports/reconciliation_cube_2026-06-23.md`) — pre-existing ephemera from earlier sprints, unrelated to
+  this branch. Harmless; consider gitignoring/removing.
+
+## Exact next step
+This sprint is DONE. Next candidate work (from the dispatch backlog): the additive dispatch redefinition
+(Option C in `DISPATCH_DEFINITION_PROPOSAL.md`) to surface the 22 invisible growers incl. LMB; or the
+RLS hard-gate (17 raw/core tables RLS-disabled, Supabase advisor critical — policy-first, its own session).
+
+---
+
 # Handoff (2026-06-30): Fix dispatch.grower_name text=uuid join cast
 Date: 2026-06-30 · Branch: `fix/dispatch-grower-name-cast` (NOT pushed; not merged to main)
 Session type: Surgical Cube model fix + proof harness. Build/commit done; live proofs PENDING-DEPLOY.

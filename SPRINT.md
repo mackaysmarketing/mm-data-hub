@@ -31,7 +31,7 @@ Rows are produced through the governed REST `/load` API with an internal-signed 
 ## Definition of Done
 - [x] All acceptance criteria checked, each with pasted evidence (`reports/cube_grower_name_proof_2026-06-30.txt`)
 - [x] Own branch (`fix/dispatch-grower-name-cast`); not pushed to main
-- [ ] Independent evaluator session confirms criteria 1–5 (skeptical-senior-engineer prompt + the rubric below)
+- [x] Independent evaluator session confirms criteria 1–5 (skeptical-senior-engineer prompt + the rubric below) — **APPROVE** (2026-06-30). An independent agent re-ran all five LIVE against prod deployment id 1 (not trusting the transcript): criterion 1 named rows no `text = uuid`; 2 `pallet_count` 43754=43754 / `load_count` 6189=6189, Σ by grower_name = 43754 (no fan-out); 3 `/meta` 6 measures + 11 dimensions unchanged; 4 `cube.js` untouched by the branch (verified via range `168f3e7..747f129`, not a misleading `diff origin/main`), scopes only `grower_key`; 5 `origin_shed` 31 sheds / LMB 1554 / single-row uuid filter. Cast direction confirmed `consignor_id::text` (down), not `grower_key::uuid`. `typecheck` clean, 72/72 tests, proof harness confirmed genuine (real signed JWT → real `/load`+`/meta`, no mocks).
 - [x] `/meta` builds clean — local server compiled the model + served `/meta` with no SQL/build errors; the reverted join's `text = uuid` error was reproduced then cleared by the fix
 - [x] HANDOFF.md updated and committed
 - [x] Working tree clean (local-proof ephemera removed; `cube/node_modules` gitignored)
