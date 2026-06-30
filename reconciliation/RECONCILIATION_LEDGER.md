@@ -1,7 +1,9 @@
 # Reconciliation Ledger — Bold Reports vs Supabase/Cube Warehouse
 
-Run started: <!-- agent fills: timestamp -->
-Branch: reconciliation/bold-vs-warehouse
+Run started: 2026-07-01 (overnight autonomous run). Branch: reconciliation/bold-vs-warehouse
+Warehouse: Supabase hub `uqzfkhsdyeokwnkpcxui` (raw/core/semantic). Reports generated 2026-07-01 ~10:00 AEST.
+One bounded backfill performed up front to close the sync-lag window (existing dispatch loader, idempotent upserts into
+RAW, `--since=2026-06-28`): loads 22,401→22,443, pallets 204,665→205,154 (full detail in "Run context" below).
 
 ## Status legend
 - **DONE** — every figure aligned (exact, or within tolerance with a documented, proven cause)
@@ -10,11 +12,21 @@ Branch: reconciliation/bold-vs-warehouse
 - **IN-PROGRESS** / **NOT-STARTED**
 
 ## Final scoreboard
-<!-- agent fills this in at the end, before stopping -->
 
 | # | Report file | Headline figures | Status | Validated query | Notes |
 |---|-------------|------------------|--------|-----------------|-------|
-|   |             |                  |        |                 |       |
+| 1 | `SOH-Cons_Summary_Truganina.csv` | 425 pallets / **30,957 boxes** on hand @ MMTRU | **DONE** | `queries/soh-cons-truganina_*.sql` | 425/425 pallets present & box-exact after sync-lag backfill (was 304/425). |
+| 2 | `Stock On Hand.csv` | **18,073 boxes** on hand @ MMLAR | **RECONCILED-DIFF** | `queries/stock-on-hand_*.sql` | 336/336 pallets present, 327 (97.3%) box-exact. −5.1% residual = 9 null-`box_count` frozen pallets (SPEC §9.3) + SSRS multi-table extraction edge. |
+| 3 | `Weekly Purchase Order Summary (Sales).csv` | ordered qty ~244,336 + prices | **BLOCKED-NEEDS-TIM** | `queries/weekly-po-summary_*.sql` | Ordered qty + price live in FreshTrack `order_item` (proven 960/37.68 exact); NOT landed. Order *headers* match (441/558 po_no present). |
+| 4 | `Sales - by farm.csv` | qty **4,919,304** · wt **53,495,382** · **$85,522,918** | **RECONCILED-DIFF** | `queries/sales-by-farm.sql` | Qty −0.43% (= `stock_boxes`+`reconsigned_boxes`; 8391/8572 loads exact). Wt +3.4% (SPEC §9.3 unreliable `net_weight_value`). $ + price BLOCKED (order_item, as #3). |
+
+**Summary:** 1 DONE · 2 RECONCILED-DIFF · 1 BLOCKED-NEEDS-TIM. Every report is in a terminal state with pasted evidence
+and a saved query. **Two cross-cutting findings:** (a) a ~1.5-day **sync-lag** window (warehouse synced 06-29 20:11 vs
+reports 07-01 10:00) capped every report; closed by one bounded idempotent dispatch-loader backfill. (b) **Order-line
+demand data (ordered quantity, unit price, line amount) is not landed** — the curated dispatch warehouse holds
+`dispatch_load`+`pallet` (packed boxes, net weight) but not FreshTrack `order`/`order_version`/`order_item`. Any report
+figure that is a price/$ or a forward *ordered* quantity is BLOCKED on landing those tables (the single actionable
+change for Tim). All *dispatched* volume figures (boxes, pallets, net weight) reconcile.
 
 ---
 
@@ -148,3 +160,48 @@ boxes (`stock_boxes`/`reconsigned_boxes`, = 0 for these Open forward orders) and
 table + NEW loader (out of bounds for this read-only reconciliation run). Until then only the order *headers* (po_no /
 consignee / scheduled_delivery / version) are reproducible — and only for the 441/558 orders that already have a
 `dispatch_load` (the other 117 are pure forward orders with no load row, invisible because the `order` table isn't landed).
+
+---
+
+### Report 4 — `Sales - by farm.csv`  →  **RECONCILED-DIFF**
+**What it is:** Sales (Sell dispatch loads, `order_type='S'`) by farm/grower, **flat detail table** — one row per
+(load, product), no subtotal rows. 15,352 lines / 8,579 distinct loads. Pickup dates span 2026-01 … 2026-06 (YTD).
+
+**Column map (proven by 3 exact spot-loads):** `[0]` consignee · `[1]` grower (consignor) · `[2]` marketer ·
+`[3]` farm/shed · `[4]` **load_no** (unique in warehouse) · `[5]` **order_no** · `[6]` po_no · `[7]` version ·
+`[8]` sched_delivery · `[9]` pickup · `[10]` **unit price** · `[11]` UOM · `[12]` product · `[13]` order-total qty
+(REPEATED per split row — a render artifact, NOT summed) · `[14]` **qty = `stock_boxes + reconsigned_boxes`** ·
+`[15]` **amount $ = qty × price** · `[16]` **net weight**.
+
+| Headline figure | Bold value | Warehouse result | Delta | Verdict |
+|---|---|---|---|---|
+| Total qty (col14) | 4,919,304 | 4,898,389 = Σ(`stock_boxes`+`reconsigned_boxes`) | −20,915 (−0.43%) | within tolerance (sync tail) |
+| — per-load qty exact | — | **8,391 / 8,572 loads** exact | — | 97.9% exact |
+| Total net weight (col16) | 53,495,382 | 55,315,194 = Σ`net_weight_value` | +1,819,812 (+3.4%) | RECONCILED-DIFF (SPEC §9.3) |
+| — per-load weight within 1% | — | **5,895 / 8,579 loads** | — | 69% within 1% |
+| Total amount $ (col15) | 85,522,918.39 | **not landed** (order_item) | — | BLOCKED |
+| Unit prices (col10) | 24.90, 36.54 … | **no price field in warehouse** | — | BLOCKED |
+| Loads present | 8,579 | **8,572 / 8,579** (load_no, unique join) | 7 missing | sync tail |
+
+**Evidence (pasted):**
+- Spot-loads exact: order 5009135 → stock_boxes 3024 / box_sum 3024 / netwt 30240 (= report qty 3024, wt 30240);
+  5022695 → 1 / 15; 5022696 → 55 / 445.5.
+- `lines=15352 distinct load_no=8579`; report totals qty=4,919,304 box(col13)=6,689,107 weight=53,495,382 amount=85,522,918.39.
+- Load-grain join: `matched=8572, wh_stock=3,471,493, wh_recon=1,426,896, wh_stock_plus_recon=4,898,389,
+  wh_netwt=55,315,194, qty_eq_stock_plus_recon=8391, missing=7`.
+- col13 proven to be the **order total repeated** on split rows (480+840=1320; 288+480+192+1200=2160) → not a measure.
+- Weight gap is one-directional (1354 loads wh-higher vs 33 lower) on non-reconsignment loads (1.87M of 1.90M). Cause
+  traced: warehouse `net_weight_value` is unreliable for some carton configs (load 5011173: 15kg cartons at 24.6–90 kg/box,
+  ~2× nominal) — the documented SPEC §9.3 produce-dependent/unreliable net-weight property. Clean loads match exactly.
+- $ source proven on FreshTrack replica: order 5009135 → `order_item.price_value=24.90`, `total_price_value=75297.60`
+  (= report price 24.90 / amount 75297.60). Same un-landed `order_item` table as Report 3.
+
+**Query:** `reconciliation/queries/sales-by-farm.sql` (spot-check, reconciliation logic, weight-cause, $-blocked proof);
+generator `reconciliation/salesfarm_extract.ts`.
+
+**Verdict:** **RECONCILED-DIFF.** The two **volume** headlines reproduce from the warehouse: **quantity to 0.43%**
+(col14 = `stock_boxes + reconsigned_boxes`; residual = the post-07-01-00:45 sync tail + null box_count) and **net weight
+to 3.4%** (residual = SPEC §9.3 unreliable `net_weight_value` on ~16% of loads, one-directional, proven by example). The
+**monetary** headline (amount $85.5M + unit prices) is structurally **BLOCKED-NEEDS-TIM** — identical to Report 3: it
+requires landing FreshTrack `order_item.price_value` / `total_price_value` (no price field exists in the curated dispatch
+warehouse). col13's 6.69M is a report render artifact, not a warehouse quantity.
