@@ -1,5 +1,5 @@
 cubes:
-  - name: dispatch_shipped
+  - name: dispatch_shipped_pallets
     title: Dispatch (Shipped)
     description: >-
       Shipped-state dispatch (grain: one pallet). Source: the governed semantic view

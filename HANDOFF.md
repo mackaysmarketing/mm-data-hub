@@ -7,7 +7,9 @@ Phase A (the `semantic.grower_dispatch_shipped` view + `core.dim_dispatch_state`
 **applied to prod** and complete — see commit `c3c2a77` / `ca8f503` for its full record.
 
 ## What was built this phase (purely additive — Option C, not B)
-1. **`cube/model/cubes/dispatch_shipped.yml`** — NEW base cube (`public: false`), reads the governed view
+1. **`cube/model/cubes/dispatch_shipped_pallets.yml`** — NEW base cube `dispatch_shipped_pallets`
+   (`public: false`; named distinctly from the `dispatch_shipped` VIEW — Cube rejects a cube and view
+   sharing a name at compile), reads the governed view
    `semantic.grower_dispatch_shipped` directly. Measures:
    - `shipped_load_count` = `COUNT(DISTINCT load_id)` (= the view's own `count(distinct load_id)`)
    - `boxes_packed` = `SUM(boxes)` (boxes = `stock_boxes + reconsigned_boxes`, computed in the view)

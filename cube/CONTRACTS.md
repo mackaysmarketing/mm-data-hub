@@ -61,7 +61,8 @@ definitions are kept on **distinct views** (not added as ambiguous siblings on `
 `load_count` (actual-pickup basis) and `shipped_load_count` (Shipped-state basis) can't be confused.
 See `DISPATCH_DEFINITION_PROPOSAL.md` for the why.
 
-Consumed through the `dispatch_shipped` **view** only (base cube `dispatch_shipped` is `public: false`).
+Consumed through the `dispatch_shipped` **view** only (base cube `dispatch_shipped_pallets` is
+`public: false`; the cube and view must NOT share a name — Cube rejects that at compile).
 
 ## Corrected definitions (vs the `dispatch` view)
 | | `dispatch` (existing, unchanged) | `dispatch_shipped` (new) |
