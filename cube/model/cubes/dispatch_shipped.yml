@@ -1,0 +1,127 @@
+cubes:
+  - name: dispatch_shipped
+    title: Dispatch (Shipped)
+    description: >-
+      Shipped-state dispatch (grain: one pallet). Source: the governed semantic view
+      semantic.grower_dispatch_shipped (migration 0021), which is the SINGLE source of truth for
+      the shipped definition. This cube is ADDITIVE — it sits ALONGSIDE the existing dispatch
+      cubes and NEVER redefines an existing metric. The corrected definitions live in the view:
+        • "dispatched" = the load reached a Shipped-or-later lifecycle state (dim_dispatch_state.sequence >= 5)
+        • "dispatched_on" = coalesce(actual_pickup_on, scheduled_pickup_on)
+        • "boxes"        = coalesce(stock_boxes,0) + coalesce(reconsigned_boxes,0)  (portal "Boxes Packed")
+      Baked-in filters the view already enforces (NOT re-applied here): Sell loads only
+      (order_type = 'S'), Shipped+ (sequence >= 5), non-test consignor (dim_grower.is_test = false).
+      Grower attribution = the LOAD's consignor_id (grower_key; SPEC §9.1) — never harvest lineage.
+      The dispatch line (sequence >= 5) is a single ops-tunable condition in the view, not here.
+    public: false
+
+    # Read the governed shipped view directly. uuid columns are cast ::text to match the
+    # grower_key / origin_shed_id string-dimension pattern used across the dispatch cubes.
+    # Cube reads as cube_readonly (read-all); per-query tenant scope is re-applied in cube.js
+    # queryRewrite on grower_key — the SAME app_metadata fail-closed contract as `dispatch`.
+    sql: >
+      SELECT
+        s.pallet_id::text       AS pallet_id,
+        s.load_id::text         AS load_id,
+        s.grower_key::text      AS grower_key,
+        s.dispatch_state,
+        s.dispatched_at,
+        s.boxes,
+        s.net_weight,
+        s.origin_shed_id::text  AS origin_shed_id,
+        s.origin_shed_name
+      FROM semantic.grower_dispatch_shipped s
+
+    joins:
+      # Readable grower attributes (code / name) for the internal/unscoped context. grower_key is
+      # text (s.grower_key::text); inside join SQL {dim_grower}.consignor_id resolves to the RAW
+      # uuid column, so cast the uuid DOWN to text — never grower_key::uuid (it is the RLS anchor,
+      # must stay text). many_to_one: consignor_id is unique in dim_grower, so no count fan-out.
+      - name: dim_grower
+        relationship: many_to_one
+        sql: "{CUBE}.grower_key = {dim_grower}.consignor_id::text"
+
+    measures:
+      - name: shipped_load_count
+        title: Shipped Load Count
+        description: >-
+          CONTRACT — count of dispatched (Shipped+, sequence >= 5) Sell loads, distinct over
+          load_id (the view is pallet grain). Equals semantic.grower_dispatch_shipped's own
+          count(distinct load_id). Loads with no pallets are absent from the view (inner pallet
+          join) — see DISPATCH_DEFINITION_PROPOSAL.md. Allowed dims: grower, dispatch_state,
+          effective_dispatched_on, origin_shed.
+        type: count_distinct
+        sql: "{CUBE}.load_id"
+
+      - name: boxes_packed
+        title: Boxes Packed
+        description: >-
+          CONTRACT — SUM of "Boxes Packed" = stock_boxes + reconsigned_boxes (the portal figure),
+          computed in the view (NEVER pallet.box_count, which is own-stock only). Pallet grain.
+        type: sum
+        sql: "{CUBE}.boxes"
+
+      - name: pallet_count_shipped
+        title: Pallet Count (Shipped)
+        description: >-
+          CONTRACT — count of pallets on Shipped+ Sell loads (pallet grain). The shipped-basis
+          analogue of dispatch.pallet_count. Filters baked into the view: Sell, Shipped+, non-test.
+        type: count
+
+      - name: net_weight_shipped
+        title: Net Weight (Shipped, kg)
+        description: >-
+          CONTRACT — SUM of pallet net_weight (kg) over Shipped+ Sell pallets. Null net_weight is
+          EXCLUDED from the sum (produce sold by count) — NEVER coalesced to 0 (SPEC §9.3). Pallet grain.
+        type: sum
+        sql: "{CUBE}.net_weight"
+
+    dimensions:
+      - name: pallet_id
+        sql: "{CUBE}.pallet_id"
+        type: string
+        primary_key: true
+        public: false
+
+      - name: load_id
+        title: Load (id)
+        sql: "{CUBE}.load_id"
+        type: string
+        public: false
+
+      - name: grower_key
+        title: Grower (consignor_id)
+        description: Grower identity = load consignor_id. RLS anchor (scoped in cube.js queryRewrite). NOT harvest_load_id.
+        sql: "{CUBE}.grower_key"
+        type: string
+
+      - name: dispatch_state
+        title: Dispatch State
+        description: >-
+          FreshTrack lifecycle state code (SH/IT/DE/…) at or beyond Shipped (sequence >= 5).
+          Sourced from core.dim_dispatch_state via the view; a non-grower lookup that cannot widen scope.
+        sql: "{CUBE}.dispatch_state"
+        type: string
+
+      - name: effective_dispatched_on
+        title: Effective Dispatch Date
+        description: >-
+          Effective dispatch date = coalesce(actual_pickup_on, scheduled_pickup_on). Distinct from
+          the existing dispatch.dispatched_on (actual_pickup_on only) — this is the SHIPPED basis.
+        sql: "{CUBE}.dispatched_at"
+        type: time
+
+      # ── Farm origin (mirrors dispatch.origin_shed_*; the pallet's OWN packing shed) ──
+      - name: origin_shed_id
+        title: Origin Shed (shed_id)
+        description: >-
+          Farm origin = the pallet's own packing shed. Distinct from grower_key (the load consignor)
+          on reconsigned pallets. uuid surfaced as text. NOT an RLS anchor (only grower_key is scoped).
+        sql: "{CUBE}.origin_shed_id"
+        type: string
+
+      - name: origin_shed_name
+        title: Origin Shed Name
+        description: Owning org name for the pallet's origin shed. Nullable. Labels origin_shed_id.
+        sql: "{CUBE}.origin_shed_name"
+        type: string

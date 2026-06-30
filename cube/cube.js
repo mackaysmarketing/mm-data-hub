@@ -43,6 +43,7 @@ function readClaims(securityContext) {
 // identical fail-closed contract; the existing dispatch/settlement scoping is untouched.
 const VIEW_GROWER_KEYS = {
   dispatch: 'dispatch.grower_key',
+  dispatch_shipped: 'dispatch_shipped.grower_key',
   settlement: 'settlement.grower_key',
   gp_settlement: 'gp_settlement.grower_key',
   gp_settlement_load: 'gp_settlement_load.grower_key',

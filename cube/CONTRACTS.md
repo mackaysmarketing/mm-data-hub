@@ -49,3 +49,61 @@ widen a grower's scope. Cube's DB role (`cube_readonly`) reads all rows; Cube na
   55 pack-weeks + capture rates). See `reports/reconciliation_cube_2026-06-20.md`.
 - RLS: `npm run cube:rls` → **12/12** (3 contexts + fail-closed + 3 forgery rejections).
   See `reports/rls_proof_cube_2026-06-21.txt`.
+
+---
+
+# `dispatch_shipped` view — ADDITIVE shipped-state surface (Sprint 8, Option C)
+
+A **separate** governed dispatch surface that corrects how "dispatched" / "boxes" are defined,
+built over `semantic.grower_dispatch_shipped` (migration `0021`). It sits **alongside** the
+`dispatch` view above and **never redefines** an existing metric — consumers OPT IN. The two
+definitions are kept on **distinct views** (not added as ambiguous siblings on `dispatch`) so
+`load_count` (actual-pickup basis) and `shipped_load_count` (Shipped-state basis) can't be confused.
+See `DISPATCH_DEFINITION_PROPOSAL.md` for the why.
+
+Consumed through the `dispatch_shipped` **view** only (base cube `dispatch_shipped` is `public: false`).
+
+## Corrected definitions (vs the `dispatch` view)
+| | `dispatch` (existing, unchanged) | `dispatch_shipped` (new) |
+|---|---|---|
+| "dispatched" | `actual_pickup_on IS NOT NULL` | load reached **Shipped+** (`dim_dispatch_state.sequence >= 5`) |
+| dispatch date | `actual_pickup_on` | `effective_dispatched_on` = `coalesce(actual_pickup_on, scheduled_pickup_on)` |
+| boxes | (no boxes measure) | `boxes_packed` = `stock_boxes + reconsigned_boxes` (portal "Boxes Packed") |
+
+The **Shipped gate is a single ops-tunable line** in the view (`st.sequence >= 5`), not baked into
+stored data — raise it to Delivered (`>= 7`) etc. with a one-line edit to migration `0021`'s view.
+
+## Baked-in filters (in the semantic view, inherited by every measure)
+- `order_type = 'S'` — Sell only.
+- `dim_dispatch_state.sequence >= 5` — Shipped-or-later (the corrected "dispatched").
+- non-test consignor — `core.dim_grower.is_test = false`.
+
+## Measures
+| Metric | Grain | Definition (exact) | Null handling |
+|---|---|---|---|
+| `shipped_load_count` | load | `COUNT(DISTINCT load_id)` over Shipped+ Sell loads | = the semantic view's own `count(distinct load_id)` |
+| `boxes_packed` | pallet | `SUM(stock_boxes + reconsigned_boxes)` (computed in the view) | never `pallet.box_count` (own-stock only) |
+| `pallet_count_shipped` | pallet | `COUNT(pallet)` over Shipped+ Sell pallets | — |
+| `net_weight_shipped` | pallet | `SUM(pallet.net_weight)` (kg) | **nulls excluded, never `coalesce(…,0)`** (SPEC §9.3) |
+
+Loads with **no pallets** are absent from the view (inner pallet join), so `shipped_load_count`
+counts Shipped+ Sell loads that carry ≥1 pallet.
+
+## Dimensions (allowed slices)
+`grower_key` (= consignor_id, the RLS anchor) · `grower_code` / `grower_name` (readable, internal
+context) · `dispatch_state` (lifecycle code SH/IT/DE/…, Shipped+) · `effective_dispatched_on`
+(`coalesce(actual, scheduled)` pickup) · `origin_shed_id` / `origin_shed_name` (the pallet's own
+packing shed; distinct from the grower on reconsigned pallets).
+
+## RLS contract
+Identical to `dispatch`: enforced in `cube.js` → `queryRewrite` reading **only**
+`app_metadata.consignor_id` / `app_metadata.is_internal`. **`dispatch_shipped.grower_key` is its RLS
+anchor**, registered in `VIEW_GROWER_KEYS` (migration-`0010`-equivalent fail-closed contract). The
+backing `semantic.grower_dispatch_shipped` is `security_invoker = true` — the SAME RLS posture as
+`grower_dispatch_detail`. No dimension/filter selection can widen a grower's scope.
+
+## Verification
+- `npm run cube:shipped` (deploy-gated) → criteria 8 (RLS: single-grower scoping, NIL/forged → 0,
+  internal = all, no fan-out, security_invoker parity) + 10 (`/meta` has the new members; the
+  existing `dispatch` `/meta` is byte-identical 6 measures + 11 dims; `shipped_load_count` equals the
+  semantic view's `count(distinct load_id)` in the same run). Report: `reports/cube_shipped_check_<date>.txt`.
