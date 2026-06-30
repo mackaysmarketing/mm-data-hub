@@ -20,11 +20,21 @@ Migration: `supabase/migrations/0021_semantic_grower_dispatch_shipped.sql` (NEW;
 **Untouched (the point of C):** `semantic.grower_dispatch_detail` (0008/0022), the `dispatch` Cube surface, all raw tables'
 data. No existing migration edited. `git diff` of the existing view = empty.
 
-## Migration apply gate — PENDING PROD APPROVAL
-No Supabase **dev branch** exists (`list_branches` → only the default project). Per the gate: built + committed + proved
-**read-only**, including a full **transactional dry-run** of the migration (`BEGIN … ROLLBACK`, transaction rollback
-verified) that created the real objects, returned the criterion numbers, and persisted nothing. **Nothing applied to prod.**
-→ **Request approval to apply `0021` to prod** (`uqzfkhsdyeokwnkpcxui`).
+## Migration apply gate — APPLIED TO PROD (approved 2026-06-30)
+No Supabase **dev branch** exists (`list_branches` → only the default project). Per the gate, the migration was built +
+committed + proved read-only (incl. a `BEGIN … ROLLBACK` dry-run), then **approval was requested and granted by Tim**, and
+**`0021` was applied to prod** (`uqzfkhsdyeokwnkpcxui`) via `apply_migration` → `{"success":true}`.
+
+### Post-apply verification against the PERSISTED objects
+- **C1** `core.dim_dispatch_state` = 14 rows: `OP=1,WO=2,FI=3,RTCO=4,SH=5,IT=6,DE=7,PDEL=8,RI=9,IN=10,CAPP=11,RP=12,PA=13,CL=14`.
+- **C2** `semantic.grower_dispatch_shipped` distinct loads (2026) = **8,035**; old basis = **3,152**.
+- **C5** `box_count <> stock_boxes` = **0** (invariant holds on persisted data).
+- **C7** `semantic.grower_dispatch_detail` = **45,782** rows — **identical** to the pre-apply count → existing surface unchanged.
+- **C9 (refined on full data — see below)** only **3** loads are truly dateless, **all carry `pack_date`**.
+- **RLS posture** (`pg_class`): `grower_dispatch_shipped` is a `security_invoker` view (= `grower_dispatch_detail`); base tables
+  `raw.ft_dispatch_load` / `raw.ft_pallet` / `core.dim_grower` have RLS **enabled**; the two new lookups
+  (`raw.ft_dispatch_load_state`, `core.dim_dispatch_state`) carry no grower data and are RLS-free by design. The new view
+  inherits the same base-table RLS contract as the existing dispatch surface (full governed `/load` RLS proof = Phase B / crit 8).
 
 ## Acceptance criteria — Phase A (2026 Sell loads)
 The proposal's blast-radius numbers are a **2026-06-23 snapshot**; today is 2026-06-30. I split the deltas into two kinds and
@@ -45,7 +55,7 @@ proved each:
 | 5 | box_count==stock_boxes; targeted | **0** mismatches/127,618; MMTRU/MMANN **1.00×**; LMBCO **14.81×**, LMBEP **16.87×** | — | 1.0× / 15.8× / 21.6× | **PASS (exact invariant)** |
 | 6 | ≤6 no-pallet / ≤16 zero-box | **9** (0.11%) / **19** (0.24%) | **9** / **19** (stable) | ≤6 / ≤16 (~0.2%) | **PASS (intent) — definition-precise, see below** |
 | 7 | existing surface UNCHANGED | not edited; old-basis **3,152**; LMB single **2025-07-15** row | old-basis **3,000** | 2,953 | **PASS — additive (new objects can't move it)** |
-| 9 | date fallback; dateless | 4,908 null-actual loads **all** carry scheduled date; **0 dateless** → no `pack_date` | — | — | **PASS (exact)** |
+| 9 | date fallback; dateless | 4,908 null-actual loads (2026) **all** carry scheduled date → dated. Full data: **3** loads truly dateless (no actual+no scheduled), excluded from any year-filtered query; **all 3 carry `pack_date`** | — | — | **PASS — see refined note** |
 
 ### 248-vs-250 resolution (criterion 3)
 The proposal is **internally inconsistent**: its prose says "all **250** of LMB's 2026 loads sit in Shipped-or-later states"
@@ -86,8 +96,14 @@ SPRINT-specified definition (`seq ≥ 5`, `order_type='S'`, `is_test=false`, joi
 - `npm run typecheck` / `npm test`: **N/A this branch** — the change is SQL-only (no TypeScript touched), and `typescript`
   is not installed in this working tree so the gates aren't runnable here; they cannot be affected by a `.sql` migration.
 
+### Criterion 9 refined (the `pack_date` decision — now answerable)
+Within a 2026 query, every shipped load is dated (4,908 null-`actual` loads inherit `scheduled_pickup_on`). Across **all** years
+the persisted view has **488 pallet-rows / 3 distinct loads** with neither actual nor scheduled pickup (`dispatched_on` null) —
+these are excluded from any date-filtered consumer query (year of null = null). **All 3 carry a non-null `pack_date`**, so adding
+`pack_date` as a third `coalesce(actual, scheduled, pack_date)` fallback would date 100% of them. **Recommendation:** add the
+`pack_date` fallback (tiny, fully-covered population) — deferred to a follow-up as it's not required for the 2026 surface.
+
 ## Next (separate goals — NOT this session)
-- **Apply 0021 to prod** once approved, then re-run the criterion SQL against the persisted objects.
 - **Phase B (Cube):** `dispatch_shipped` cube+view over `semantic.grower_dispatch_shipped`, `VIEW_GROWER_KEYS` RLS anchor,
   deploy-gated. Draft `cube/model/views/dispatch_shipped.yml` + `scripts/ft_dispatch_shipped_reconcile.ts` exist on branch
   `sprint-8-dispatch-shipped` (review/redo there).
