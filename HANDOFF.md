@@ -76,7 +76,22 @@ SPRINT-specified definition (`seq ≥ 5`, `order_type='S'`, `is_test=false`, joi
 - **I did NOT alter the definition to hit 22/49 or ≤6/≤16** — that would violate the single-condition gate and the spec. The
   numbers above are the truthful governed values.
 
-### Why 22/49 and ≤6/≤16 are NOT reproducible (exhaustive check)
+### ROOT CAUSE of the 4 & 6 gap: a different "2026" basis (load-creation vs pickup date)
+Reading the proposal's own source (`scripts/ft_dispatch_cross_grower_validation.ts`, on branch `sprint-8-dispatch-shipped`)
+settles it. That script — which produced the 22/49 and ≤6/≤16 figures — runs against the **FreshTrack replica**
+(`public.dispatch_load` / `public.pallet`) and defines "2026" as **`created_on >= '2026-01-01'`** (the load's *creation*
+date). The hub's `semantic.grower_dispatch_shipped` defines "2026" as the *pickup* year (`year of dispatched_on =
+coalesce(actual, scheduled)`), because **the hub does not land `created_on` at all** — confirmed: it is in no column of
+`raw.ft_dispatch_load` and in none of the 34 keys of its `_raw` payload (`createdOn`/`created_on` present in 0 / 22,401 rows).
+- These two "2026" definitions select **different load populations** (a load created in 2026 may have a 2025/null pickup date,
+  and vice-versa), so the flip-count (47/21 vs 49/22) and the no-pallet/zero-box counts (9/19 vs ≤6/≤16) legitimately differ.
+- **Reproducing the proposal's exact 4 & 6 is impossible inside the hub** (no `created_on`) and not runnable in this session
+  (no `.env`/`FRESHTRACK_DATABASE_URL`, `pg`/`dotenv` not installed → the replica-based script cannot execute here).
+- Closing the gap to the literal numbers would require either landing `created_on` in `raw.ft_dispatch_load` (a raw-schema
+  change + re-load — **explicitly out of scope**: "raw tables not mutated") or running the replica script with live creds.
+- The shipped hub surface is correct on its own (pickup-year) basis; Tim accepted these governed values as ground truth.
+
+### Why 22/49 and ≤6/≤16 are NOT reproducible from the hub (exhaustive check)
 - `raw.ft_dispatch_load._synced_at` has exactly two batches: **21,156 rows synced 2026-06-23** (the proposal's data) and
   **1,245 synced 2026-06-29** (added after). I reconstructed every contested criterion against (i) effective dispatch date
   ≤ 2026-06-23 and (ii) the 2026-06-23 sync batch.
