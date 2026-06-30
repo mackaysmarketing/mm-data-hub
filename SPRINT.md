@@ -26,7 +26,7 @@ Rows are produced through the governed REST `/load` API with an internal-signed 
 - [x] **queryRewrite anchor unchanged** — `cube.js` untouched (`git diff` empty). `VIEW_GROWER_KEYS.dispatch = 'dispatch.grower_key'` (cube.js:45) is the sole dispatch anchor; the only scope push is on that member (cube.js:104–111); no filter ever pushed onto `grower_name`. *(Deploy-free, source-verified.)*
 - [x] **No regression on origin_shed** — `pallet_count` by `origin_shed_name` returns 31 non-null sheds, **LMB = 1554**; uuid filter `origin_shed_id = 0196372c-5cd9-d666-ae1d-b85ad02b6bdd` returns its **single** LMB row (1554). Evidence: §5.
 
-> **Proof mechanism note:** all five ran through the governed REST `/load` + `/meta` API (the same `cube:reconcile`/`cube:rls` mechanism, internal-signed `app_metadata.is_internal:true`) against a **local instance of the identical model + `cube.js`** (same queryRewrite contract) on the same Supabase DB via the read-only `cube_readonly` role — because prod Cube Cloud deployment id 1 has not yet received the fix (deploy blocked on a hex CLI token; see HANDOFF). Re-run on prod after deploy with `npm run cube:grower-name`.
+> **Proof mechanism note:** all five ran through the governed REST `/load` + `/meta` API (the same `cube:reconcile`/`cube:rls` mechanism, internal-signed `app_metadata.is_internal:true`). **Proven on PROD** — deployment id 1 (`lime-lamprey.aws-us-west-2.cubecloudapp.dev`), after the fix was deployed 2026-06-30; numbers identical to the earlier local-instance run (43754/6189, LMB=1554, 6+11 `/meta`).
 
 ## Definition of Done
 - [x] All acceptance criteria checked, each with pasted evidence (`reports/cube_grower_name_proof_2026-06-30.txt`)
@@ -35,7 +35,7 @@ Rows are produced through the governed REST `/load` API with an internal-signed 
 - [x] `/meta` builds clean — local server compiled the model + served `/meta` with no SQL/build errors; the reverted join's `text = uuid` error was reproduced then cleared by the fix
 - [x] HANDOFF.md updated and committed
 - [x] Working tree clean (local-proof ephemera removed; `cube/node_modules` gitignored)
-- [ ] Deployed to prod Cube Cloud deployment id 1 (blocked on hex CLI deploy token — see HANDOFF)
+- [x] Deployed to prod Cube Cloud deployment id 1 (2026-06-30); all 5 criteria re-proven on prod via `npm run cube:grower-name`
 
 ## Deploy gate (same fence as the origin_shed sprint)
 The MCP can only query **production deployment id 1** ("MM Data Hub") — there is no reachable dev deployment. The `/load` and `/meta` proofs run against the **built** model, so verifying criteria 1, 2, 3, 5 requires the fix deployed to prod, which needs explicit approval. So: build + commit on the branch, verify the deploy-free criterion (4) and the source-level additive diff, then **stop and request approval to deploy**. Report deploy-dependent criteria as PENDING-DEPLOY until approved. Deploy via `cd cube && npx cubejs-cli deploy --token <hex CLI deploy token>` — the hex token from the Deploy-with-CLI page, **not** a JWT query token (the empty-`{}`-payload JWTs are unscoped query tokens and the CLI rejects them).

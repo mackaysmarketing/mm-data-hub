@@ -44,13 +44,15 @@ RLS security-context anchor where the repo default ("cast must be uuid") applies
   - (5) `pallet_count` by `origin_shed_name` returns 31 non-null sheds, **LMB = 1554**; uuid filter on
     `origin_shed_id = 0196372c-…6bdd` returns its **single** LMB row (1554).
 
-## Prod deploy — still outstanding (separate from proof)
-The proofs above ran on a local instance of the governed layer, NOT prod Cube Cloud deployment id 1.
-Deploying the fix to prod is blocked on a Cube Cloud **hex CLI deploy token** (the stored
-`~/.cubecloud/config.json` JWT is 403/expired; `CUBE_TOKEN_UNSCOPED` is a query JWT the CLI rejects).
-To ship to prod: `cd cube && npx cubejs-cli deploy --token <hex from Deploy-with-CLI page>`. The model
-+ proofs are ready; only the prod push awaits the token. (Local proof ephemera — `_local_server.cjs`,
-`--no-save` postgres-driver — were removed/not committed; `cube/node_modules` is gitignored.)
+## Prod deploy — DONE
+Fix **deployed to prod Cube Cloud deployment id 1** 2026-06-30 (host
+`lime-lamprey.aws-us-west-2.cubecloudapp.dev`). All five criteria **re-proven on prod** via
+`npm run cube:grower-name` (default `CUBE_API_URL`, no local override) — results identical to the
+local-instance run: grower_name selectable (no text=uuid), pallet_count 43754, load_count 6189,
+`/meta` 6+11, queryRewrite grower_key-only, LMB origin shed 1554. The committed
+`reports/cube_grower_name_proof_2026-06-30.txt` is the prod run. (Local proof ephemera —
+`_local_server.cjs`, `--no-save` postgres-driver — removed/not committed; `cube/node_modules`
+gitignored.)
 
 ---
 
