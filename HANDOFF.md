@@ -1,3 +1,48 @@
+# Handoff (2026-06-30): Fix dispatch.grower_name text=uuid join cast
+Date: 2026-06-30 · Branch: `fix/dispatch-grower-name-cast` (NOT pushed; not merged to main)
+Session type: Surgical Cube model fix + proof harness. Build/commit done; live proofs PENDING-DEPLOY.
+
+## What was done
+The `dispatch` view advertised `grower_name` as a dimension but selecting it raised
+`operator does not exist: text = uuid`. Root cause in `cube/model/cubes/dispatch_loads.yml`: the
+`dispatch_loads → core.dim_grower` join predicate compared `grower_key` (text — `d.consignor_id::text`
+in the cube SQL) against `{dim_grower}.consignor_id`, which inside join SQL resolves to the **raw uuid
+column** of `core.dim_grower` (the dimension's `::text` does NOT apply in join context — `{dim_grower}`
+expands to the table alias). Hence text = uuid.
+
+**Fix (one predicate, cast DOWN to text):**
+```
+- sql: "{CUBE}.grower_key = {dim_grower}.consignor_id"
++ sql: "{CUBE}.grower_key = {dim_grower}.consignor_id::text"
+```
+Cast the uuid → text, **never** `grower_key::uuid`: `grower_key` is the RLS anchor that flows through
+`queryRewrite` and every other select; casting it to uuid would throw on any non-uuid value, and
+`core.dim_grower` is tiny so the predicate cast is free. This is a **display join**, distinct from the
+RLS security-context anchor where the repo default ("cast must be uuid") applies — do not revert it.
+
+## Scope discipline (what was NOT touched)
+- `cube/cube.js` `queryRewrite` — **untouched** (`git diff cube/cube.js` empty). Still scopes only
+  `dispatch.grower_key` (VIEW_GROWER_KEYS, cube.js:44–49; scope push, cube.js:104–111). No filter is
+  ever pushed onto `grower_name`. **Criterion 4 — PASS (deploy-free, source-verified).**
+- `origin_shed_id` / `origin_shed_name` dims and the raw layer — untouched.
+- No member added/removed/renamed; the change is a join predicate only → `/meta` must be unchanged.
+
+## Verification status
+- `npm run typecheck` — clean. `npm test` — 72/72 pass. `dispatch_loads.yml` parses (js-yaml).
+- **Criterion 4 (queryRewrite anchor)** — PASS, source-verified (deploy-free).
+- **Criteria 1, 2, 3, 5** — **PENDING-DEPLOY.** They run through the governed REST `/load` + `/meta`
+  API against prod deployment id 1, which serves the *built* model — so they require the fix deployed.
+  Harness written: `npm run cube:grower-name` (`scripts/cube_grower_name_proof.ts`) runs all four and
+  writes `reports/cube_grower_name_proof_<date>.txt`. **Awaiting deploy approval before running.**
+
+## Deploy gate
+MCP can only query prod deployment id 1 ("MM Data Hub"); no reachable dev deployment. Deploy via
+`cd cube && npx cubejs-cli deploy --token <hex CLI deploy token>` (hex token from the Deploy-with-CLI
+page — NOT a JWT query token). After deploy: `npm run cube:grower-name`, paste the report into SPRINT.md
+acceptance, flip criteria 1/2/3/5 from PENDING-DEPLOY to checked.
+
+---
+
 # Handoff (Sprint 7 CLOSE): LMB Farms dispatch backfill — sync gap closed + origin verified
 Date: 2026-06-29
 Session type: Fix / Verification (incremental backfill of the LMB gap + read-only reconciliation
