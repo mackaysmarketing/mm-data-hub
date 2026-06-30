@@ -74,6 +74,23 @@ export async function cubeLoad(query: CubeQuery, securityContext: SecurityContex
   throw new Error('Cube /load kept returning "Continue wait" after 30 tries');
 }
 
+/** GET /meta — the built model's catalog. Returns the cubes/views array verbatim. */
+export async function cubeMeta(securityContext: SecurityContext): Promise<any> {
+  const token = signToken(securityContext);
+  const res = await fetch(`${cubeApiUrl()}/meta`, {
+    headers: { Authorization: token, 'Content-Type': 'application/json' },
+  });
+  const text = await res.text();
+  let body: any;
+  try {
+    body = JSON.parse(text);
+  } catch {
+    throw new Error(`Cube /meta non-JSON (${res.status}): ${text.slice(0, 300)}`);
+  }
+  if (res.status !== 200) throw new Error(`Cube /meta error (${res.status}): ${JSON.stringify(body).slice(0, 500)}`);
+  return body;
+}
+
 /** Single scalar measure; returns null verbatim (never coalesced) so null integrity is testable. */
 export async function scalar(measure: string, ctx: SecurityContext, extra: Partial<CubeQuery> = {}): Promise<number | null> {
   const rows = await cubeLoad({ measures: [measure], ...extra }, ctx);

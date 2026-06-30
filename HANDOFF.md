@@ -1,3 +1,61 @@
+# Handoff (2026-06-30): Fix dispatch.grower_name text=uuid join cast
+Date: 2026-06-30 · Branch: `fix/dispatch-grower-name-cast` (NOT pushed; not merged to main)
+Session type: Surgical Cube model fix + proof harness. Build/commit done; live proofs PENDING-DEPLOY.
+
+## What was done
+The `dispatch` view advertised `grower_name` as a dimension but selecting it raised
+`operator does not exist: text = uuid`. Root cause in `cube/model/cubes/dispatch_loads.yml`: the
+`dispatch_loads → core.dim_grower` join predicate compared `grower_key` (text — `d.consignor_id::text`
+in the cube SQL) against `{dim_grower}.consignor_id`, which inside join SQL resolves to the **raw uuid
+column** of `core.dim_grower` (the dimension's `::text` does NOT apply in join context — `{dim_grower}`
+expands to the table alias). Hence text = uuid.
+
+**Fix (one predicate, cast DOWN to text):**
+```
+- sql: "{CUBE}.grower_key = {dim_grower}.consignor_id"
++ sql: "{CUBE}.grower_key = {dim_grower}.consignor_id::text"
+```
+Cast the uuid → text, **never** `grower_key::uuid`: `grower_key` is the RLS anchor that flows through
+`queryRewrite` and every other select; casting it to uuid would throw on any non-uuid value, and
+`core.dim_grower` is tiny so the predicate cast is free. This is a **display join**, distinct from the
+RLS security-context anchor where the repo default ("cast must be uuid") applies — do not revert it.
+
+## Scope discipline (what was NOT touched)
+- `cube/cube.js` `queryRewrite` — **untouched** (`git diff cube/cube.js` empty). Still scopes only
+  `dispatch.grower_key` (VIEW_GROWER_KEYS, cube.js:44–49; scope push, cube.js:104–111). No filter is
+  ever pushed onto `grower_name`. **Criterion 4 — PASS (deploy-free, source-verified).**
+- `origin_shed_id` / `origin_shed_name` dims and the raw layer — untouched.
+- No member added/removed/renamed; the change is a join predicate only → `/meta` must be unchanged.
+
+## Verification status — ALL FIVE CRITERIA PROVEN
+- `npm run typecheck` — clean. `npm test` — 72/72 pass. `dispatch_loads.yml` parses.
+- **Criterion 4 (queryRewrite anchor)** — PASS, source-verified (deploy-free). `cube.js` untouched.
+- **Criteria 1, 2, 3, 5** — PASS, proven through the governed REST `/load` + `/meta` API against a
+  LOCAL instance of the IDENTICAL model + `cube.js` (same queryRewrite/security contract) connected to
+  the same Supabase DB via the read-only `cube_readonly` role. Evidence: `npm run cube:grower-name`
+  → `reports/cube_grower_name_proof_2026-06-30.txt`. Summary:
+  - (1) `grower_name` + `pallet_count` returns named rows (MM Larapinta 15152, MM Truganina 8662, …),
+    **no `text = uuid`**. The bug was reproduced on the reverted join (pre-fix → `operator does not
+    exist: text = uuid`), gone post-fix.
+  - (2) totals identical pre-fix vs post-fix on the SAME current data: pallet_count **43754 = 43754**,
+    load_count **6189 = 6189**; Σ by grower_name = 43754 (no fan-out). (Higher than the 2026-06-23
+    report's 42336/6037 because the Sprint-7 LMB backfill landed 2026-06-29 — a cast adds no rows.)
+  - (3) `/meta` dispatch view = **6 measures + 11 dimensions**, names identical (incl. origin_shed_*).
+  - (5) `pallet_count` by `origin_shed_name` returns 31 non-null sheds, **LMB = 1554**; uuid filter on
+    `origin_shed_id = 0196372c-…6bdd` returns its **single** LMB row (1554).
+
+## Prod deploy — DONE
+Fix **deployed to prod Cube Cloud deployment id 1** 2026-06-30 (host
+`lime-lamprey.aws-us-west-2.cubecloudapp.dev`). All five criteria **re-proven on prod** via
+`npm run cube:grower-name` (default `CUBE_API_URL`, no local override) — results identical to the
+local-instance run: grower_name selectable (no text=uuid), pallet_count 43754, load_count 6189,
+`/meta` 6+11, queryRewrite grower_key-only, LMB origin shed 1554. The committed
+`reports/cube_grower_name_proof_2026-06-30.txt` is the prod run. (Local proof ephemera —
+`_local_server.cjs`, `--no-save` postgres-driver — removed/not committed; `cube/node_modules`
+gitignored.)
+
+---
+
 # Handoff (Sprint 7 CLOSE): LMB Farms dispatch backfill — sync gap closed + origin verified
 Date: 2026-06-29
 Session type: Fix / Verification (incremental backfill of the LMB gap + read-only reconciliation

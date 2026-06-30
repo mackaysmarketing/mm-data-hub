@@ -29,7 +29,11 @@ cubes:
     joins:
       - name: dim_grower
         relationship: many_to_one
-        sql: "{CUBE}.grower_key = {dim_grower}.consignor_id"
+        # grower_key is text (d.consignor_id::text); inside join SQL {dim_grower}.consignor_id
+        # resolves to the RAW uuid column (the dimension's ::text does NOT apply here), so the
+        # predicate was text = uuid. Cast the uuid DOWN to text — never grower_key::uuid (it is
+        # the RLS anchor, must stay text, and casting to uuid would throw on any non-uuid value).
+        sql: "{CUBE}.grower_key = {dim_grower}.consignor_id::text"
       # One load → many pallets. Rooting the `dispatch` view here keeps load_count at TRUE
       # load grain (all dispatched Sell loads, incl. the ~45 with no pallet rows), while
       # pallet measures aggregate over the LEFT-joined pallets.
