@@ -1,0 +1,114 @@
+cubes:
+  - name: order_items
+    title: Order Lines (internal)
+    description: >-
+      FreshTrack order lines (SALES / type=S) at line grain. Source: semantic.order_sales →
+      core.fact_order_item (authoritative-version lines only; superseded versions excluded). The
+      commercial/sell side — ordered quantities, unit prices and line dollars.
+
+      INTERNAL-ONLY: order data carries Mackays' selling prices/margins, so NO grower is ever
+      granted access. There is NO grower_key on this cube (consignor_id on a sell order is the
+      SELLER, not a grower). RLS is enforced at the semantic/DB layer (core.fact_order_item is
+      fail-closed to app_metadata.is_internal); this cube + its view are public:false so no consumer
+      — grower or otherwise — can reach order data until a deliberate future exposure.
+
+      ADDITIVE — these order measures NEVER redefine a dispatch / NetSuite / GP settlement metric.
+      Amounts summed with nulls excluded, never coalesced to 0 (SPEC §9.3).
+    public: false  # SECURITY-RELEVANT: internal-only order data. No grower_key + not in cube.js VIEW_GROWER_KEYS; public:false keeps it unreachable. Do NOT set public:true.
+    sql_table: semantic.order_sales
+
+    measures:
+      - name: order_count
+        title: Order Count
+        description: CONTRACT — distinct orders represented by these sales lines.
+        type: count_distinct
+        sql: "{CUBE}.order_id"
+
+      - name: line_count
+        title: Order Line Count
+        description: CONTRACT — count of current-version sales order lines.
+        type: count
+        sql: "{CUBE}.order_item_id"
+
+      - name: boxes_ordered
+        title: Boxes Ordered
+        description: CONTRACT — SUM of total_box_count (nulls excluded, never coalesced to 0).
+        type: sum
+        sql: "{CUBE}.total_box_count"
+
+      - name: total_line_value
+        title: Total Line Value (AUD)
+        description: CONTRACT — SUM of the native pre-computed line total_price_value. Nulls excluded.
+        type: sum
+        sql: "{CUBE}.total_price_value"
+
+      - name: derived_line_value
+        title: Derived Line Value (AUD)
+        description: SUM of the derived extended value (BOX→boxes×price, else native). Recon anchor vs total_line_value.
+        type: sum
+        sql: "{CUBE}.derived_price_value"
+
+      - name: lines_with_dispatch_link
+        title: Lines Linked to Dispatch
+        description: Sales lines carrying a dispatch_load_id (the order↔dispatch join key present).
+        type: count
+        sql: "{CUBE}.order_item_id"
+        filters:
+          - sql: "{CUBE}.dispatch_load_id is not null"
+
+    dimensions:
+      - name: order_item_id
+        sql: "{CUBE}.order_item_id"
+        type: string
+        primary_key: true
+        public: false
+
+      - name: order_id
+        title: Order Id
+        sql: "{CUBE}.order_id"
+        type: string
+
+      - name: order_no
+        title: Order No
+        sql: "{CUBE}.order_no"
+        type: string
+
+      - name: po_no
+        title: PO No
+        description: Purchase-order number — a join key back to dispatch.
+        sql: "{CUBE}.po_no"
+        type: string
+
+      - name: order_type
+        title: Order Type
+        description: S (Sell) — the sales surface filters to S.
+        sql: "{CUBE}.order_type"
+        type: string
+
+      - name: price_per
+        title: Price Per
+        description: BOX / WEIGHT_UNIT — the unit the price_value is quoted per.
+        sql: "{CUBE}.price_per"
+        type: string
+
+      - name: price_currency
+        title: Price Currency
+        description: AUD (asserted for Mackays sales).
+        sql: "{CUBE}.price_currency"
+        type: string
+
+      - name: dispatch_load_id
+        title: Dispatch Load Id
+        description: The order↔dispatch join key (raw.ft_dispatch_load.id). Exposed for the Sales-by-farm bridge.
+        sql: "{CUBE}.dispatch_load_id"
+        type: string
+
+      - name: product_id
+        title: Product Id
+        sql: "{CUBE}.product_id"
+        type: string
+
+      - name: last_modified_on
+        title: Last Modified On
+        sql: "{CUBE}.last_modified_on"
+        type: time
