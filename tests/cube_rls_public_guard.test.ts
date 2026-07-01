@@ -29,7 +29,7 @@ function readViewGrowerKeys(): Set<string> {
   const block = src.match(/const\s+VIEW_GROWER_KEYS\s*=\s*\{([\s\S]*?)\}/);
   assert.ok(block, 'could not locate VIEW_GROWER_KEYS object in cube.js');
   const keys = new Set<string>();
-  for (const m of block![1].matchAll(/^\s*([A-Za-z_]\w*)\s*:/gm)) keys.add(m[1]);
+  for (const m of (block[1] ?? '').matchAll(/^\s*([A-Za-z_]\w*)\s*:/gm)) { if (m[1]) keys.add(m[1]); }
   return keys;
 }
 
@@ -47,10 +47,10 @@ function parseCubes(file: string, text: string): CubeBlock[] {
   const starts: { idx: number; name: string }[] = [];
   lines.forEach((ln, i) => {
     const m = ln.match(/^ {2}- name:\s*(\S+)\s*$/);
-    if (m) starts.push({ idx: i, name: m[1] });
+    if (m && m[1]) starts.push({ idx: i, name: m[1] });
   });
   return starts.map((s, k) => {
-    const end = k + 1 < starts.length ? starts[k + 1].idx : lines.length;
+    const end = k + 1 < starts.length ? starts[k + 1]!.idx : lines.length;
     const body = lines.slice(s.idx, end);
     // grower_key as a NESTED member (indent >= 4 spaces) = the tenant anchor / tenant-row exposure.
     const exposesTenantData = body.some((ln) => /^\s{4,}- name:\s*grower_key\b/.test(ln));

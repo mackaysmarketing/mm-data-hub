@@ -1,0 +1,36 @@
+views:
+  - name: sales_orders
+    title: Sales Orders (internal)
+    description: >-
+      Governed FreshTrack order (SALES / type=S) metric surface at line grain, code-defined here.
+      The base cube (order_items) is private; this view is the consumable surface.
+
+      INTERNAL-ONLY and public:false. Order data carries Mackays' selling prices/margins, so it is
+      NOT exposed to growers — there is no grower_key and no VIEW_GROWER_KEYS anchor. RLS is enforced
+      at the semantic/DB layer (core.fact_order_item fail-closed to app_metadata.is_internal); a grower
+      claim sees ZERO order rows. This view stays public:false until a deliberate future exposure
+      (a follow-on sprint would add an internal-only rewrite rule). Guard: tests/cube_rls_public_guard.test.ts.
+
+      Contract discipline: order metrics are ADDITIVE — they never redefine a dispatch / NetSuite / GP
+      settlement metric. The join keys (dispatch_load_id, po_no, order_id) are exposed for the
+      follow-on Sales-by-farm bridge; that bridge is NOT built here.
+    public: false
+
+    cubes:
+      - join_path: order_items
+        includes:
+          - order_count
+          - line_count
+          - boxes_ordered
+          - total_line_value
+          - derived_line_value
+          - lines_with_dispatch_link
+          - order_id
+          - order_no
+          - po_no
+          - order_type
+          - price_per
+          - price_currency
+          - dispatch_load_id
+          - product_id
+          - last_modified_on
