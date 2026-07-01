@@ -46,6 +46,7 @@
     "schema:diff": "node --experimental-strip-types src/schemaDiff.ts",
     "schema:snapshot": "node --experimental-strip-types src/schemaDiff.ts --init",
     "cube:rls": "node --experimental-strip-types scripts/cube_rls_proof.ts",
+    "rls:multifarm": "node --experimental-strip-types scripts/rls_multi_farm_proof.ts",
     "cube:reconcile": "node --experimental-strip-types scripts/cube_reconcile.ts",
     "cube:grower-name": "node --experimental-strip-types scripts/cube_grower_name_proof.ts",
     "cube:settlement": "node --experimental-strip-types scripts/cube_settlement_check.ts",
