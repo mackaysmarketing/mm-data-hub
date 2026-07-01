@@ -1,3 +1,44 @@
+# Handoff (2026-07-01): Grower RLS — single consignor_id → consignor SET (multi-farm)
+
+Status: **✅ DONE — A0–B3 proven with pasted evidence.** Migration `0026` applied to the hub;
+Cube change is code-only (**awaiting manual Cube deploy** — no deploy token in session).
+**Portal sprint deferred as instructed:** no group reference table, grants, grower-admin role,
+delegated user creation, subset check, grant resolver, or JWT stamping — mm-hub still stamps
+`app_metadata`.
+
+## What changed
+One grower login can now carry **multiple farms**. RLS anchor widened from a single `consignor_id`
+to a **SET**, in both Postgres policies and the Cube filter, backward-compatible, `app_metadata`-only,
+fail-closed.
+
+- **Migration `0026_grower_rls_consignor_set.sql`** (raw/core/semantic only — grep-proven, no
+  public/auth/storage):
+  - New `semantic.current_consignor_ids() → uuid[]`: union of `app_metadata.consignor_ids[]`
+    (multi-farm) + legacy scalar `app_metadata.consignor_id`, de-duplicated, valid-only, fail-closed
+    (empty on missing/malformed; never raises).
+  - `semantic.current_consignor_id()` is now a **first-element shim** over the set — kept only for
+    non-policy callers; **no grower policy references it**.
+  - All **6** `grower_own_*` policies rewritten to `consignor_id = ANY(semantic.current_consignor_ids())
+    OR is_internal_claim()` (the `raw.ft_pallet` load subquery too).
+- **`cube/cube.js`**: `readClaims` returns the consignor SET; `queryRewrite` appends an
+  `equals`/multi-value (IN) filter = set membership; internal unscoped; empty/invalid → NIL (0 rows).
+  `contextToAppId`/`contextToOrchestratorId` now key on the **whole sorted set** so `[A]` and `[A,B]`
+  never share a cache bucket.
+
+## Test set (real multi-farm grower)
+**L & R Collins** — A=`LRCLA` (Lakeland) `019439a6-…517087`, B=`LRCTU` (Tully) `019439a8-…dba6c`;
+unrelated third C=`ZONTA` `019439d4-…7ed6a`. Snapshot: `reports/rls_multi_farm_a0_snapshot_2026-07-01.md`.
+
+## Proofs (runnable)
+- `npm run rls:multifarm` — A2–A7, **45/45 pass** (`reports/rls_multi_farm_proof_2026-07-01.txt`):
+  legacy token == A0 baseline (backward compat); `[A,B]` → A+B only, unrelated C = 0; A sees 0 of B;
+  no-claim/empty-set/forged top-level → 0; internal → full; functions never error on malformed.
+- `npm run cube:compile` — whole schema, **0 errors** (B1).
+- `npm test` — **91/91** incl. new `tests/cube_rls_multifarm.test.ts` (set membership + multi-farm
+  isolation) and unchanged `cube_rls_public_guard` (B2/B3).
+
+---
+
 # Handoff (2026-07-01): Order-Domain Ingest — order / order_version / order_item
 
 Status: **✅ DONE — all acceptance criteria proven with pasted evidence.** Last step: **awaiting manual

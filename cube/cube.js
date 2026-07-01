@@ -5,27 +5,34 @@
 // security context — NOT via Postgres RLS. Cube connects on a read-only role that can
 // read all rows; every query is narrowed to the caller's consignor before it runs.
 //
-// Claim contract — IDENTICAL to the Sprint-1 DB hardening (migration 0010): the grower
-// identity and the internal flag are read ONLY from the SERVER-controlled `app_metadata`
-// namespace, never from top-level / user_metadata claims a grower could self-set —
-//   securityContext.app_metadata.consignor_id  (uuid)   → the grower
+// Claim contract — IDENTICAL to the DB hardening (migrations 0010/0026): the grower identity and
+// the internal flag are read ONLY from the SERVER-controlled `app_metadata` namespace, never from
+// top-level / user_metadata claims a grower could self-set —
+//   securityContext.app_metadata.consignor_ids ([uuid]) → the grower's farms (multi-farm; 0026)
+//   securityContext.app_metadata.consignor_id  (uuid)   → legacy single farm (folds into the set)
 //   securityContext.app_metadata.is_internal   (truthy) → hub staff / service (sees all)
 //
-// Fail-closed: a context that is neither internal nor carries a VALID consignor_id sees
-// NOTHING. A malformed consignor_id is treated as absent (no rows), never trusted. No
-// dimension or filter a consumer selects can widen scope — the scope filter is appended
-// unconditionally on top of whatever the consumer asked for.
+// Fail-closed: a context that is neither internal nor carries a VALID consignor is scoped to NIL →
+// NOTHING. A malformed consignor is treated as absent (no rows), never trusted. No dimension or
+// filter a consumer selects can widen scope — the scope filter is appended unconditionally on top
+// of whatever the consumer asked for. The SET is enforced with an `equals`/multi-value (IN) filter,
+// so a multi-farm grower sees the UNION of its farms and nothing else.
 
 const NIL_UUID = '00000000-0000-0000-0000-000000000000';
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-/** Read grower identity + internal flag from a Cube security context — app_metadata ONLY. */
+/** Read grower identity SET + internal flag from a Cube security context — app_metadata ONLY.
+ *  consignorIds = de-duplicated, valid-only UNION of app_metadata.consignor_ids[] (multi-farm, 0026)
+ *  and the legacy scalar app_metadata.consignor_id. consignorId keeps element 1 for compatibility. */
 function readClaims(securityContext) {
   const am = (securityContext && securityContext.app_metadata) || {};
 
-  const rawConsignor = am.consignor_id;
-  const consignorId =
-    typeof rawConsignor === 'string' && UUID_RE.test(rawConsignor) ? rawConsignor : null;
+  const consignorIds = [];
+  const add = (raw) => {
+    if (typeof raw === 'string' && UUID_RE.test(raw) && !consignorIds.includes(raw)) consignorIds.push(raw);
+  };
+  if (Array.isArray(am.consignor_ids)) am.consignor_ids.forEach(add);
+  add(am.consignor_id); // legacy scalar folds into the set (backward-compatible)
 
   const rawInternal = am.is_internal;
   const isInternal =
@@ -34,7 +41,13 @@ function readClaims(securityContext) {
     (typeof rawInternal === 'string' &&
       ['true', 't', '1', 'yes'].includes(rawInternal.toLowerCase()));
 
-  return { consignorId, isInternal };
+  return { consignorIds, consignorId: consignorIds.length ? consignorIds[0] : null, isInternal };
+}
+
+/** Stable per-tenant cache key: the WHOLE sorted consignor set, so a [A] token and a [A,B] token
+ *  never share a cache bucket (a single-farm grower must not be served a multi-farm cached result). */
+function tenantKey(consignorIds) {
+  return consignorIds.length ? consignorIds.slice().sort().join('_') : 'none';
 }
 
 // Each governed view's RLS anchor. queryRewrite scopes whichever views a query references — so the
@@ -84,30 +97,31 @@ module.exports = {
   // Per-tenant isolation of cache / pre-aggregations: each grower (and internal) keyed apart,
   // so one tenant's cached result can never be served to another.
   contextToAppId: ({ securityContext }) => {
-    const { consignorId, isInternal } = readClaims(securityContext);
-    return isInternal ? 'app_internal' : `app_grower_${consignorId || 'none'}`;
+    const { consignorIds, isInternal } = readClaims(securityContext);
+    return isInternal ? 'app_internal' : `app_grower_${tenantKey(consignorIds)}`;
   },
   contextToOrchestratorId: ({ securityContext }) => {
-    const { consignorId, isInternal } = readClaims(securityContext);
-    return isInternal ? 'orch_internal' : `orch_grower_${consignorId || 'none'}`;
+    const { consignorIds, isInternal } = readClaims(securityContext);
+    return isInternal ? 'orch_internal' : `orch_grower_${tenantKey(consignorIds)}`;
   },
 
   queryRewrite: (query, { securityContext }) => {
-    const { consignorId, isInternal } = readClaims(securityContext);
+    const { consignorIds, isInternal } = readClaims(securityContext);
     query.filters = query.filters || [];
 
     // Internal / service context → unscoped (every consignor, every view).
     if (isInternal) return query;
 
-    // Grower → own consignor; neither internal nor a valid consignor → fail closed (NIL → 0 rows).
-    // Scope is appended on EACH governed view the query references (dispatch and/or settlement), so
-    // no dimension/filter the consumer selects can widen it, and the two views never cross-leak.
-    const value = consignorId || NIL_UUID;
+    // Grower → own consignor SET; neither internal nor any valid consignor → fail closed (NIL → 0).
+    // `equals` with multiple values is set membership (IN), so a multi-farm grower sees the UNION of
+    // its farms. Scope is appended on EACH governed view the query references (dispatch and/or
+    // settlement), so no dimension/filter the consumer selects can widen it, and views never cross-leak.
+    const values = consignorIds.length ? consignorIds : [NIL_UUID];
     for (const view of viewsInQuery(query)) {
       query.filters.push({
         member: VIEW_GROWER_KEYS[view],
         operator: 'equals',
-        values: [value],
+        values,
       });
     }
     return query;
