@@ -1,3 +1,9 @@
+> **Addendum (2026-07-03):** Migration `0027_raw_retail_prices.sql` applied to the hub (ledger
+> entry `0027_raw_retail_prices`) — retail shelf-price landing for the **price-reporter** scraper
+> (separate repo; its `scripts/load-to-warehouse.ts` writes via pg using `DATABASE_URL`). raw-only,
+> RLS ON, cube_readonly-only read (0012 pattern), natural key `run_id+retailer+state+product_id`.
+> Committed here; **not yet pushed** (push needs the mackaysmarketing PAT per CLAUDE.md).
+
 # Handoff (2026-07-01): Grower RLS — single consignor_id → consignor SET (multi-farm)
 
 Status: **✅ DONE — A0–B3 proven with pasted evidence.** Migration `0026` applied to the hub;
