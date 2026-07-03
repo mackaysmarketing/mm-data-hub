@@ -1,0 +1,38 @@
+views:
+  - name: retail
+    title: Retail Prices (internal)
+    description: >-
+      Governed retail shelf-price surface at day grain, code-defined here. This is the
+      DELIBERATE internal-only exposure the order-domain notes anticipated: the view is
+      queryable, but cube.js queryRewrite NIL-filters every non-internal context to zero rows
+      (INTERNAL_ONLY_VIEWS gate) — same app_metadata-only, fail-closed contract as the grower
+      scoping. The DB layer is independently fail-closed (no authenticated grant on
+      semantic.retail_prices). Consumers: Steep (internal BI context) and the hub MCP internal
+      path.
+
+      Contract discipline: retail metrics are ADDITIVE — they never redefine a dispatch /
+      settlement / order metric. Consumer note: filter `scope` ('state' vs 'national') before
+      cross-state comparisons, and `is_watchlist = true` for produce-line metrics (false rows
+      are ALDI Super Savers catalogue items).
+
+    cubes:
+      - join_path: retail_prices
+        includes:
+          - observation_count
+          - avg_price
+          - min_price
+          - max_price
+          - promo_observations
+          - retailer
+          - state
+          - scope
+          - store_name
+          - product_label
+          - product_key
+          - is_watchlist
+          - promo_flag
+          - promo_label
+          - unit_price
+          - price
+          - was_price
+          - capture_date

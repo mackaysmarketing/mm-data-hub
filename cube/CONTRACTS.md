@@ -108,3 +108,47 @@ backing `semantic.grower_dispatch_shipped` is `security_invoker = true` — the 
   internal = all, no fan-out, security_invoker parity) + 10 (`/meta` has the new members; the
   existing `dispatch` `/meta` is byte-identical 6 measures + 11 dims; `shipped_load_count` equals the
   semantic view's `count(distinct load_id)` in the same run). Report: `reports/cube_shipped_check_<date>.txt`.
+
+# `retail` view — INTERNAL-ONLY retail shelf prices (reporting phase 1)
+
+Source: `semantic.retail_prices` — day grain over `raw.retail_prices` (the price-reporter
+scraper: Woolworths per-state pickup stores, Coles national baseline + per-store rows when
+its store leg is unblocked, ALDI national + Super Savers catalogue promos). Base cube
+`retail_prices` is `public:false`; consume via the `retail` view only.
+
+## Baked-in behaviour (in the semantic view, inherited by every measure)
+- Day grain: latest capture per (retailer, state, store_name, product_id) per local
+  (Australia/Brisbane) capture date — multiple runs in a day collapse to the last.
+- `price` / `was_price` NULLs are EXCLUDED from aggregates, never coalesced to 0 (SPEC §9.3).
+- No test-data filter is needed (partial/test files are refused by the warehouse loader).
+
+## Measures
+| Measure | Contract |
+|---|---|
+| `observation_count` | Count of day-grain price rows in scope. |
+| `avg_price` / `min_price` / `max_price` | AVG/MIN/MAX of the day-grain shelf price (AUD), nulls excluded. |
+| `promo_observations` | Day-grain rows with `promo_flag = true` (badge, multibuy or was-price). |
+
+## Dimensions (allowed slices)
+`retailer`, `state`, `scope`, `store_name`, `product_label`, `product_key`, `is_watchlist`,
+`promo_flag`, `promo_label`, `unit_price` (display string), `price`, `was_price` (detail),
+`capture_date` (time).
+
+**Consumer rules:** filter `scope` (`'state'` vs `'national'`) before ANY cross-state
+comparison — AU is a national baseline, not a ninth state. Filter `is_watchlist = true` for
+produce-line metrics; `false` rows are ALDI Super Savers catalogue items (specials signal).
+
+## RLS contract — INTERNAL-ONLY
+The inverse of the grower views: there is NO grower scope to narrow to. `cube.js`
+`queryRewrite` NIL-filters every non-internal context (`INTERNAL_ONLY_VIEWS`) to zero rows;
+`is_internal` (app_metadata-only) passes unscoped. The DB layer is independently fail-closed:
+`semantic.retail_prices` has no `authenticated` grant. ADDITIVE-ONLY, as everywhere: never
+redefine these measures' meaning, grain, or the scope/watchlist rules.
+
+## Verification
+- `sql/retail_semantic_proof.sql` — grain uniqueness, scope split, watchlist split vs the
+  loaded day (first proven 2026-07-03: 37 rows = 37 grain keys; 7 watchlist / 30 specials;
+  37 national / 0 state).
+- `npm run cube:compile` — model compiles with the retail cube + view.
+- Post-deploy: internal context returns rows; grower and no-claim contexts return 0 (the
+  INTERNAL_ONLY_VIEWS gate), pattern of `npm run cube:rls`.

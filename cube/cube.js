@@ -62,6 +62,16 @@ const VIEW_GROWER_KEYS = {
   gp_settlement_load: 'gp_settlement_load.grower_key',
 };
 
+// INTERNAL-ONLY views: Mackays-internal data (competitor retail pricing) with NO grower
+// dimension at all — there is nothing to scope a grower TO, so any non-internal context is
+// NIL-filtered to zero rows on the named member. Same app_metadata-only, fail-closed contract
+// as the grower scoping; ADDITIVE (dispatch/settlement behaviour untouched). The DB layer is
+// independently fail-closed (no authenticated grant on the semantic view).
+const INTERNAL_ONLY_VIEWS = {
+  retail: 'retail.retailer',
+};
+const INTERNAL_ONLY_NIL = '__internal_only__';
+
 /** Every member name referenced anywhere in a query (measures/dims/segments/time/filters/order). */
 function collectMembers(query) {
   const out = [];
@@ -111,6 +121,20 @@ module.exports = {
 
     // Internal / service context → unscoped (every consignor, every view).
     if (isInternal) return query;
+
+    // Internal-only views (competitor retail pricing): non-internal contexts get zero rows —
+    // one NIL equality on the view's named member zeroes the whole query. Fail closed.
+    for (const m of collectMembers(query)) {
+      const prefix = String(m).split('.')[0];
+      if (INTERNAL_ONLY_VIEWS[prefix]) {
+        query.filters.push({
+          member: INTERNAL_ONLY_VIEWS[prefix],
+          operator: 'equals',
+          values: [INTERNAL_ONLY_NIL],
+        });
+        break;
+      }
+    }
 
     // Grower → own consignor SET; neither internal nor any valid consignor → fail closed (NIL → 0).
     // `equals` with multiple values is set membership (IN), so a multi-farm grower sees the UNION of

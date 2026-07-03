@@ -1,0 +1,135 @@
+cubes:
+  - name: retail_prices
+    title: Retail Shelf Prices (base)
+    description: >-
+      Retail shelf prices & specials at day grain — one row per retailer/state/store/product per
+      local (Australia/Brisbane) capture date, latest capture winning. Source:
+      semantic.retail_prices over raw.retail_prices (price-reporter scraper: Woolworths per-state
+      pickup stores, Coles national baseline + per-store rows when unblocked, ALDI national +
+      Super Savers catalogue promos).
+
+      INTERNAL-ONLY: competitor retail pricing; no grower is ever granted access. There is no
+      grower_key — the cube.js queryRewrite NIL-filters any non-internal context to zero rows
+      (INTERNAL_ONLY_VIEWS gate), and the DB layer is independently fail-closed
+      (semantic.retail_prices has no authenticated grant). Consume via the `retail` view only.
+
+      ADDITIVE — retail metrics never redefine a dispatch / settlement / order metric. Prices
+      aggregated with nulls EXCLUDED, never coalesced to 0 (SPEC §9.3). scope must be filtered
+      ('state' vs 'national') before cross-state comparisons — AU is not a ninth state.
+    public: false  # SECURITY-RELEVANT: base cube stays private; the `retail` view (rewrite-gated) is the consumable surface.
+    sql_table: semantic.retail_prices
+
+    measures:
+      - name: observation_count
+        title: Price Observations
+        description: CONTRACT — count of day-grain price rows in scope.
+        type: count
+
+      - name: avg_price
+        title: Average Price (AUD)
+        description: CONTRACT — AVG of the day-grain shelf price. Nulls excluded, never coalesced to 0.
+        type: avg
+        sql: "{CUBE}.price"
+
+      - name: min_price
+        title: Minimum Price (AUD)
+        description: CONTRACT — MIN of the day-grain shelf price (nulls excluded).
+        type: min
+        sql: "{CUBE}.price"
+
+      - name: max_price
+        title: Maximum Price (AUD)
+        description: CONTRACT — MAX of the day-grain shelf price (nulls excluded).
+        type: max
+        sql: "{CUBE}.price"
+
+      - name: promo_observations
+        title: Promo Observations
+        description: CONTRACT — day-grain rows flagged as on promotion (badge, multibuy or was-price).
+        type: count
+        filters:
+          - sql: "{CUBE}.promo_flag = true"
+
+    dimensions:
+      - name: row_key
+        sql: "{CUBE}.retailer || '|' || {CUBE}.state || '|' || {CUBE}.store_name || '|' || {CUBE}.product_id || '|' || {CUBE}.capture_date::text"
+        type: string
+        primary_key: true
+        public: false
+
+      - name: retailer
+        title: Retailer
+        description: woolworths / coles / aldi (text, never an enum).
+        sql: "{CUBE}.retailer"
+        type: string
+
+      - name: state
+        title: State
+        description: QLD..ACT for state rows; AU for national rows — see scope before comparing states.
+        sql: "{CUBE}.state"
+        type: string
+
+      - name: scope
+        title: Scope
+        description: CONTRACT — 'state' (per-state store price) vs 'national' (AU baseline). Filter or facet by this before any cross-state comparison; AU is not a ninth state.
+        sql: "{CUBE}.scope"
+        type: string
+
+      - name: store_name
+        title: Store
+        description: The pinned store for state rows ('' where the leg has no store concept).
+        sql: "{CUBE}.store_name"
+        type: string
+
+      - name: product_label
+        title: Product
+        description: Watchlist label, or the catalogue item name for ALDI Super Savers rows.
+        sql: "{CUBE}.product_label"
+        type: string
+
+      - name: product_key
+        title: Product Key
+        description: Conformed cross-retailer key (core.dim_retail_product); null on non-watchlist rows.
+        sql: "{CUBE}.product_key"
+        type: string
+
+      - name: is_watchlist
+        title: Is Watchlist
+        description: CONTRACT — true = one of the 5 Mackays lines; false = catalogue specials noise. Filter true for produce-line metrics.
+        sql: "{CUBE}.is_watchlist"
+        type: boolean
+
+      - name: promo_flag
+        title: On Promotion
+        sql: "{CUBE}.promo_flag"
+        type: boolean
+
+      - name: promo_label
+        title: Promo Label
+        description: Badge text as displayed — 'Special', 'Super Savers', 'Add 2 | $4', 'was $x'.
+        sql: "{CUBE}.promo_label"
+        type: string
+
+      - name: unit_price
+        title: Unit Price (as displayed)
+        description: Source-faithful display string (e.g. '$4.90 / 1KG') — not a number.
+        sql: "{CUBE}.unit_price"
+        type: string
+
+      - name: price
+        title: Price (AUD)
+        description: The day-grain shelf price (detail dimension; may be null — never coalesced).
+        sql: "{CUBE}.price"
+        type: number
+
+      - name: was_price
+        title: Was Price (AUD)
+        description: Strike-through price when shown; null otherwise (never coalesced).
+        sql: "{CUBE}.was_price"
+        type: number
+
+      - name: capture_date
+        title: Capture Date
+        description: The local (Australia/Brisbane) day the price was captured — the day grain.
+        sql: "{CUBE}.capture_date"
+        type: time
