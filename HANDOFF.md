@@ -2,7 +2,17 @@
 > entry `0027_raw_retail_prices`) — retail shelf-price landing for the **price-reporter** scraper
 > (separate repo; its `scripts/load-to-warehouse.ts` writes via pg using `DATABASE_URL`). raw-only,
 > RLS ON, cube_readonly-only read (0012 pattern), natural key `run_id+retailer+state+product_id`.
-> Committed here; **not yet pushed** (push needs the mackaysmarketing PAT per CLAUDE.md).
+>
+> **Addendum 2 (2026-07-03, retail metric layer — SPRINT-retail-metrics.md):** `0028`
+> (core.dim_retail_product, seeded) + `0029` (semantic.retail_prices day-grain view, NO
+> authenticated grant — fail closed, proven) applied with ledger entries. Cube: `retail_prices`
+> base cube (public:false) + `retail` view + **INTERNAL_ONLY_VIEWS gate in cube.js queryRewrite**
+> (non-internal → NIL → 0 rows; additive). Proven pre-deploy: semantic proof
+> (sql/retail_semantic_proof.sql — 37=37 grain, 7/30 watchlist split), compile 0 errors,
+> typecheck clean, tests 91/91. **Cube DEPLOYED (Tim, 2026-07-03) and live-proven:**
+> `scripts/cube_retail_check.ts` → **7/7** (internal parity 37/30/8.5228 exact; real grower
+> MMPRO 0 rows incl. group_by; no-claim 0; forged 0). Commits **not yet pushed**
+> (mackaysmarketing PAT per CLAUDE.md).
 
 # Handoff (2026-07-01): Grower RLS — single consignor_id → consignor SET (multi-farm)
 
