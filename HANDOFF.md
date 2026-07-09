@@ -1,3 +1,64 @@
+# Handoff (2026-07-09): Settlement bridge — order book ↔ grower settlement
+
+Status: **✅ Bridge built + proven; ⏸ STOPPED at the revenue-class checkpoint (by design).**
+Migrations `0031` (core) + `0032` (semantic) applied to the hub. **Awaiting Tim's marking of
+`reports/revenue_class_checkpoint_2026-07-09.md`** — revenue_class is NOT wired (never guessed);
+`mackays_revenue` is NULL and `core.fact_revenue_charge` / `semantic.mackays_revenue_fresh` are
+empty until the marking lands. Commits **not yet pushed** (mackaysmarketing PAT per CLAUDE.md).
+
+## What landed
+- **`core.fact_settlement_bridge`** (0031) — raw.ft_gp_detail grain (23,544 rows = 100% of settled
+  details; ALL gp_detail rows are settled). Keys incl. order_id (via `raw.ft_dispatch_load.order_id`
+  — the real bridge; fact_order_item.dispatch_load_id is 99.3% null), order_item_id (only when
+  exactly one authoritative line matches), schedule + detail consignors, consignee (+ denormalised
+  names — raw.ft_entity has no authenticated grant). Measures: tiered `sell_value`
+  (rate = Σ priced-line $ ÷ Σ priced-line boxes; per-(order,product) over-allocation cap),
+  `grower_gross` (unrounded box×price), `variance`, settlement deductions/GST/net **allocated
+  group-exact** from fact_gp_settlement_load (|gross|-share + residual-on-largest-row → every
+  (schedule, load) group sums exactly), `mackays_revenue` (NULL until checkpoint).
+- **`core.fact_revenue_charge`** (0031) — charge-application grain for revenue reporting; built
+  from `dim_gp_charge.revenue_class` ∈ {commission, ripening, other_service}; empty pre-checkpoint.
+- **`core.dim_gp_charge.revenue_class`** added (text, nullable, UNWIRED — Tim's checkpoint marking
+  first; sequenced to not collide with the separate dim-RLS remediation).
+- **Semantic (0032, all INTERNAL-ONLY, security_invoker):** `settlement_bridge_by_grower` /
+  `_by_product` / `_by_customer` + `mackays_revenue_fresh` (month × class × charge × grower ×
+  customer; product-level revenue lives on _by_product — charges are load-grain).
+- **Loader `npm run ft:bridge:core`** (src/loaders/ft_bridge_core.ts; run after ft:gp:core +
+  ft:order:core) with coverage + no-double-count self-checks. **Proofs:** `npm run ft:bridge:verify`
+  (6/6) · `npm run ft:bridge:rls` (30/30). Checkpoint artifact: `scripts/revenue_class_checkpoint.ts`.
+
+## Evidence (2026-07-09, all re-runnable)
+- **AC1 parity:** settled gp_detail = 23,544; bridge = 23,544. ✅
+- **AC2 no double-count:** 17,938 (schedule, load) groups, **0 mismatched** (gross + all 6 deduction
+  classes + GST, tolerance $0.005); per-LOAD across schedules: 14,243 loads, **0 mismatched**. The 37
+  charge-only groups (35 loads, +$547.37 ded / −$179.78 GST) have no detail rows — excluded by grain,
+  surfaced. ✅
+- **AC3 no over-allocation:** 11,879 orders with sell, **0** with Σ sell_value > derived_price_value
+  + $1 (13 orders raw ~$40k → group cap). ✅
+- **AC4 tiers:** product_exact 19,667 rows / $175.01M gross (**99.09%**, AC ≥ 80); box_allocated
+  3,622 / $0.98M (0.56%); unmatched 255 / $0.62M (0.35%). ✅
+- **AC5 variance (product_exact, n=16,850):** median **$0.00**, p95(|v|) **$0.00**, **99.58%**
+  within ±1%; Σ variance −$54,818 on $175M (0.03%). Top-10 |variance| pasted in the session report
+  (leads: 5003006 +$14.9k; SERRA 5003329 −$5.9k; MACBO cluster). ✅
+- **AC7 RLS:** 30/30 — internal sees rows (23,544 / 36 / 89 / 66); real settled grower, no-claim,
+  forged top-level → **0 rows** on the fact + revenue fact + all 4 views. Multi-farm suite **45/45**.
+  Typecheck clean; tests **91/91**. ⚠ `mcp:proof` = 19/25: the 6 fails are STALE June-21 absolute
+  count baselines (data grew: 43,975 vs 38,322 pallets); every relative identity invariant passes
+  (A == internal-filtered-to-A, A→B = 0, forged/no-claim = 0). Pre-existing drift, not this sprint —
+  fix chip spawned.
+- **AC6 checkpoint (⏸ waiting):** `reports/revenue_class_checkpoint_2026-07-09.md` — 96 settled
+  charges (only ct_scope 'WH - Ripening' pre-proposed) + 66 account-code-only groups (4,968 rows,
+  $1.59M, no charge_id → cannot carry revenue_class; needs an account-code rule if any are revenue).
+  Ripening tie anchor: **$6,379,588.03** / 9,663 rows.
+
+## Next step (after Tim's marking)
+1. Wire the marked list into `src/lib/ft_gp_charges.ts` + the dim build (ft_gp_core), re-run
+   `ft:gp:core` → `ft:bridge:core`; mackays_revenue + fact_revenue_charge populate.
+2. Paste proof 6 (mackays_revenue by class + by grower; ripening tied to $6,379,588.03) and re-run
+   `ft:bridge:rls` (the revenue surfaces then assert internal > 0).
+3. Perf note: the refresh stages temp tables + ANALYZE (CTEs got a 25-row estimate vs 23,544 real →
+   nested-loop blowup past a 9-min timeout; now 1.6s).
+
 > **Addendum (2026-07-03):** Migration `0027_raw_retail_prices.sql` applied to the hub (ledger
 > entry `0027_raw_retail_prices`) — retail shelf-price landing for the **price-reporter** scraper
 > (separate repo; its `scripts/load-to-warehouse.ts` writes via pg using `DATABASE_URL`). raw-only,

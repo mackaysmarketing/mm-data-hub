@@ -1,0 +1,35 @@
+=== Hub MCP identity-propagation + parity proof ===
+
+query_metric pallet_count — internal=43975 A=15162 B=8751 none=0 forged=0
+
+FAIL  metric: internal parity (=38322) — pallet_count=43975
+FAIL  metric: grower A scoped total (=13186) — A=15162
+FAIL  metric: grower B scoped total (=7631) — B=8751
+PASS  metric: no-claim fails closed (=0) — none=0
+PASS  metric: forged top-level claim fails closed (=0) — forged=0
+PASS  metric: A + B ≤ internal — 15162+8751 ≤ 43975
+PASS  metric: A == internal-filtered-to-A — A=15162 vs internal|A=15162
+PASS  metric: A cannot filter into B (=0) — A→B=0
+PASS  metric: A group_by grower_key = {A} only — keys=["0191e996-93b7-fcd1-170e-87c6aa517087"]
+
+detail count(*) — internal=46002 A=15366 B=8751 none=0 forged=0
+
+FAIL  detail: internal sees all (=38796) — internal=46002
+FAIL  detail: grower A scoped (=13281) — A=15366
+FAIL  detail: grower B scoped (=7631) — B=8751
+PASS  detail: no-claim fails closed (=0) — none=0
+PASS  detail: forged top-level fails closed (=0) — forged=0
+PASS  list: A sees only its own grower_key — keys=["0191e996-93b7-fcd1-170e-87c6aa517087"]
+PASS  list: internal sees multiple growers — 11 distinct grower_keys in page
+PASS  list: no-claim returns 0 rows — rows=0
+PASS  list: A cannot widen via grower=B (=0) — rows=0
+PASS  output shape on every read — columns/rows/metric_definition/filters_applied/row_count/truncated
+PASS  output carries baked-in filters + RLS scope — filters_applied.rls="grower-scoped to consignor_id=0191e996-93b7-fcd1-170e-87c6aa517087"
+PASS  unknown metric rejected — Unknown metric 'bogus_metric'. Valid metrics: load_count, pallet_count, net_weig
+PASS  unknown dimension rejected — Unknown dimension 'not_a_dim'. Valid dimensions: grower_key, consignee_key, disp
+PASS  run_select rejects non-semantic schema — run_select rejected: only the “semantic.” schema may be referenced (found “raw.”
+PASS  run_select rejects DML — run_select allows only SELECT / WITH…SELECT queries
+PASS  run_select rejects multiple statements — run_select allows a single statement only (no “;”-separated statements)
+
+=== 19/25 checks passed ===
+FAILED: metric: internal parity (=38322); metric: grower A scoped total (=13186); metric: grower B scoped total (=7631); detail: internal sees all (=38796); detail: grower A scoped (=13281); detail: grower B scoped (=7631)
