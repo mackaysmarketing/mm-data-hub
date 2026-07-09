@@ -1,0 +1,303 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mackays revenue classification — 2026-07-09</title>
+<style>
+  :root{
+    --commission:#1a7f4b; --ripening:#0e7490; --other_service:#1d4ed8;
+    --cost_recovery:#b45309; --pass_through:#6b7280; --na:#9ca3af;
+    --ink:#1f2937; --muted:#6b7280; --line:#e5e7eb; --bg:#f8fafc;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font:14px/1.45 "Segoe UI",Arial,sans-serif;color:var(--ink);background:var(--bg)}
+  header{background:#0f2b46;color:#fff;padding:18px 24px}
+  header h1{margin:0 0 6px;font-size:20px}
+  header p{margin:4px 0;color:#cbd5e1;max-width:1000px}
+  header b{color:#fff}
+  .legend{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
+  .legend span{padding:3px 10px;border-radius:12px;font-size:12px;color:#fff}
+  .wrap{max-width:1240px;margin:0 auto;padding:16px 24px 120px}
+  .defs{background:#fff;border:1px solid var(--line);border-radius:8px;padding:12px 16px;margin:14px 0;font-size:13px}
+  .defs td{padding:3px 10px 3px 0;vertical-align:top}
+  .defs .k{font-weight:600;white-space:nowrap}
+  .toolbar{position:sticky;top:0;z-index:20;background:#fff;border:1px solid var(--line);border-radius:8px;
+           padding:10px 14px;margin:10px 0;display:flex;gap:14px;align-items:center;flex-wrap:wrap;
+           box-shadow:0 2px 6px rgba(0,0,0,.06)}
+  .toolbar input[type=search]{flex:1;min-width:220px;padding:7px 10px;border:1px solid var(--line);border-radius:6px;font-size:14px}
+  .fbtn{padding:6px 12px;border:1px solid var(--line);border-radius:6px;background:#fff;cursor:pointer;font-size:13px}
+  .fbtn.on{background:#0f2b46;color:#fff;border-color:#0f2b46}
+  .section{background:#fff;border:1px solid var(--line);border-radius:8px;margin:14px 0;overflow:hidden}
+  .sech{display:flex;align-items:center;gap:12px;padding:10px 14px;background:#eef2f7;cursor:pointer;flex-wrap:wrap}
+  .sech h2{margin:0;font-size:15px}
+  .sech .sub{color:var(--muted);font-size:12.5px}
+  .sech select{margin-left:auto;padding:5px 8px;border:1px solid var(--line);border-radius:6px;font-size:12.5px}
+  .row{display:flex;align-items:center;gap:12px;padding:9px 14px;border-top:1px solid var(--line)}
+  .row.hidden{display:none}
+  .row .info{flex:1;min-width:280px}
+  .row .nm{font-weight:600}
+  .row .meta{color:var(--muted);font-size:12px;margin-top:1px}
+  .row .num{width:170px;text-align:right;font-variant-numeric:tabular-nums}
+  .row .num .d{font-weight:600}
+  .row .num .r{color:var(--muted);font-size:12px}
+  .chips{display:flex;gap:4px;flex-wrap:nowrap}
+  .chip{padding:4px 9px;border-radius:12px;border:1.5px solid var(--line);background:#fff;cursor:pointer;
+        font-size:12px;color:var(--muted);white-space:nowrap}
+  .chip:hover{border-color:#94a3b8}
+  .chip.sel{color:#fff;border-color:transparent}
+  .clr{border:none;background:none;color:#cbd5e1;cursor:pointer;font-size:14px;padding:2px 4px}
+  .clr:hover{color:#ef4444}
+  .pp{font-size:10.5px;background:#ccfbf1;color:#0e7490;border-radius:8px;padding:1px 6px;margin-left:6px}
+  footer{position:fixed;left:0;right:0;bottom:0;background:#0f2b46;color:#fff;padding:10px 24px;z-index:30;
+         display:flex;gap:22px;align-items:center;flex-wrap:wrap;box-shadow:0 -3px 8px rgba(0,0,0,.2)}
+  footer .stat b{font-size:15px}
+  footer .stat{font-size:12.5px;color:#cbd5e1}
+  footer .stat b{color:#fff}
+  .gen{margin-left:auto;background:#22c55e;border:none;color:#04240f;font-weight:700;font-size:15px;
+       padding:11px 22px;border-radius:8px;cursor:pointer}
+  .gen:hover{background:#4ade80}
+  .reset{background:none;border:1px solid #475569;color:#cbd5e1;border-radius:6px;padding:6px 10px;cursor:pointer;font-size:12px}
+  .bar{height:6px;background:#1e3a5f;border-radius:3px;width:180px;overflow:hidden}
+  .bar i{display:block;height:100%;background:#22c55e;width:0}
+  .tie{font-size:12.5px}
+  .tie .ok{color:#4ade80;font-weight:700}
+  .tie .off{color:#fbbf24;font-weight:700}
+</style>
+</head>
+<body>
+<header>
+  <h1>Mackays revenue classification — settled grower-pool charges</h1>
+  <p>Mark <b>every line</b> with one class. This decides which charges count as <b>Mackays revenue</b>
+     (= commission + ripening + other_service) in the data hub. Your choices save automatically in this
+     browser — you can close the page and come back. When done, click <b>Generate report</b> (bottom
+     right) and send the downloaded CSV file back to Claude to wire it in.</p>
+  <div class="legend">
+    <span style="background:var(--commission)">commission</span>
+    <span style="background:var(--ripening)">ripening</span>
+    <span style="background:var(--other_service)">other_service</span>
+    <span style="background:var(--cost_recovery)">cost_recovery</span>
+    <span style="background:var(--pass_through)">pass_through</span>
+    <span style="background:var(--na)">na</span>
+  </div>
+</header>
+<div class="wrap">
+  <div class="defs"><table>
+    <tr><td class="k" style="color:var(--commission)">commission</td><td>Mackays' selling commission on grower fruit — revenue.</td></tr>
+    <tr><td class="k" style="color:var(--ripening)">ripening</td><td>Ripening fees charged by Mackays' own facilities (Truganina, Ann Rd, Larapinta, QPI, Epping, DBM) — revenue. Lines with ct_scope 'WH - Ripening' are pre-selected; change any that shouldn't count.</td></tr>
+    <tr><td class="k" style="color:var(--other_service)">other_service</td><td>Other services Mackays performs itself and charges for (e.g. handling, packing, labelling done in-house) — revenue.</td></tr>
+    <tr><td class="k" style="color:var(--cost_recovery)">cost_recovery</td><td>Mackays recovering a cost it paid on the grower's behalf (e.g. third-party freight recharged) — not revenue.</td></tr>
+    <tr><td class="k" style="color:var(--pass_through)">pass_through</td><td>Third-party charge passed straight to the grower (industry levies, retailer rebates, inspection fees…) — not revenue.</td></tr>
+    <tr><td class="k" style="color:var(--na)">na</td><td>Not applicable — adjustments, corrections, anything that isn't a real charge class.</td></tr>
+  </table></div>
+  <div class="toolbar">
+    <input id="q" type="search" placeholder="Search name / scope / account code…">
+    <button class="fbtn on" data-f="all">All</button>
+    <button class="fbtn" data-f="unmarked">Unmarked</button>
+    <button class="fbtn" data-f="marked">Marked</button>
+  </div>
+  <div id="sections"></div>
+</div>
+<footer>
+  <div class="stat">Charges<br><b id="pc">0 / 0</b></div>
+  <div class="stat">Account codes<br><b id="pa">0 / 0</b></div>
+  <div class="bar"><i id="pb"></i></div>
+  <div class="stat">Mackays revenue (marked)<br><b id="rev">$0</b></div>
+  <div class="stat tie">Ripening marked vs 'WH - Ripening' anchor<br><b id="tie">–</b></div>
+  <button class="reset" id="reset">Reset all</button>
+  <button class="gen" id="gen">⬇ Generate report (CSV)</button>
+</footer>
+<script>
+"use strict";
+var CHARGES = [{"charge_id":"01966696-f70f-03eb-3146-c0fd3ce944f1","name":"Freight","ct_scope":"FR - Fatigue Levy","ct_code":"100000","account_code":"611201-611202-260-710-509-03","category":"FR","subcategory":"Fatigue Levy","applied_rows":19337,"applied_dollars":9276483.16,"proposed_ripening":false},{"charge_id":"019766c1-4c27-c1e5-ef54-9858cd9f478a","name":"FR - Blenners - Outside Market Delivery Fee","ct_scope":"Freight","ct_code":"100000","account_code":"611275-611276-260-710-509-03","category":"FR","subcategory":"Blenners - Outside Market Delivery Fee","applied_rows":2,"applied_dollars":1795.2,"proposed_ripening":false},{"charge_id":"01976237-7981-3275-bd6b-58036c011cc7","name":"FR - Blenners - Fatigue Levy - DO NOT USE","ct_scope":"FREIGHT","ct_code":"100000","account_code":"611274-611275-260-710-509-03","category":"FR","subcategory":"Blenners - Fatigue Levy - DO NOT USE","applied_rows":2,"applied_dollars":10,"proposed_ripening":false},{"charge_id":"0198e99c-2e7f-eac5-cff8-b0669b4279e6","name":"LA - Freight - Blenners","ct_scope":"MD-Load Adjustment","ct_code":"500000","account_code":"611274-611275-260-710-509-03","category":"LA","subcategory":"Load Adjustment","applied_rows":12,"applied_dollars":9630.2,"proposed_ripening":false},{"charge_id":"019bb9ab-b9cb-7217-b4ab-d82657f53af9","name":"LA - Papaya Sales","ct_scope":"MD-Load Adjustment","ct_code":"500000","account_code":"641260-641261-260-710-509-02","category":"LA","subcategory":"Load Adjustment","applied_rows":5,"applied_dollars":3770,"proposed_ripening":false},{"charge_id":"019c21f3-688d-1399-cc29-499d1b1d7992","name":"LA - Ripening - Truganina Banana 15kg","ct_scope":"MD-Load Adjustment","ct_code":"500000","account_code":"641321-641322-260-515-521-03","category":"LA","subcategory":"Load Adjustment","applied_rows":3,"applied_dollars":2821.5,"proposed_ripening":false},{"charge_id":"019b95b6-97ec-4dcf-719f-5f2dc6c238a9","name":"LA - Commission - 4.5%","ct_scope":"MD-Load Adjustment","ct_code":"500000","account_code":"611298-418045-260-710-509-03","category":"LA","subcategory":"Load Adjustment","applied_rows":12,"applied_dollars":2785.23,"proposed_ripening":false},{"charge_id":"019c2552-bd51-0d3f-d70d-b75a998a6ea4","name":"LA - Retail Rebate - Coles 2.5%","ct_scope":"MD-Load Adjustment","ct_code":"500000","account_code":"611202-611201-260-710-509-04","category":"LA","subcategory":"Load Adjustment","applied_rows":5,"applied_dollars":1612.62,"proposed_ripening":false},{"charge_id":"019c21f4-c158-20dd-d000-ef7b53634751","name":"LA - Packaging Fees - Coles Band Fee Bananas","ct_scope":"MD-Load Adjustment","ct_code":"500000","account_code":"611298-611251-260-710-509-03","category":"LA","subcategory":"Load Adjustment","applied_rows":1,"applied_dollars":1531.2,"proposed_ripening":false},{"charge_id":"019c21f4-40cb-7739-ede3-aa319df9aba2","name":"LA - Ripening - Truganina - Coles Kids Packs","ct_scope":"MD-Load Adjustment","ct_code":"500000","account_code":"641321-641322-260-515-521-03","category":"LA","subcategory":"Load Adjustment","applied_rows":1,"applied_dollars":1188,"proposed_ripening":false},{"charge_id":"0198e9a0-ad31-0010-32ab-919867ee14c3","name":"LA - Freight - Other","ct_scope":"MD-Load Adjustment","ct_code":"500000","account_code":"611271-418070-260-710-509-03","category":"LA","subcategory":"Load Adjustment","applied_rows":4,"applied_dollars":721.92,"proposed_ripening":false},{"charge_id":"0198e99f-2342-a080-0f3c-a2d0fe9ec77e","name":"LA - Freight - Coles Collect","ct_scope":"MD-Load Adjustment","ct_code":"500000","account_code":"611278-611279-260-710-509-03","category":"LA","subcategory":"Load Adjustment","applied_rows":5,"applied_dollars":665.63,"proposed_ripening":false},{"charge_id":"019c0180-9327-3400-d4cf-a96954b554fc","name":"LA - Banana Compulsory","ct_scope":"MD-Load Adjustment","ct_code":"500000","account_code":"611298-611225-260-710-509-04","category":"LA","subcategory":"Load Adjustment","applied_rows":5,"applied_dollars":549.46,"proposed_ripening":false},{"charge_id":"019c017f-7f12-15dc-6235-43e3771e7ad6","name":"LA - Panama Voluntary","ct_scope":"MD-Load Adjustment","ct_code":"500000","account_code":"611298-611237-260-710-509-03","category":"LA","subcategory":"Load Adjustment","applied_rows":5,"applied_dollars":317.63,"proposed_ripening":false},{"charge_id":"019b95b5-a6d0-dc6d-2e08-fc8602958fd1","name":"LA-Commission-3%","ct_scope":"MD-Load Adjustment","ct_code":"500000","account_code":"611298-418045-260-710-509-03","category":"LA","subcategory":"Load Adjustment","applied_rows":12,"applied_dollars":184.59,"proposed_ripening":false},{"charge_id":"019bfdd8-bebf-7b05-0ef2-f90fe7875786","name":"LA - SQBR Unloading Fee","ct_scope":"MD-Load Adjustment","ct_code":"500000","account_code":"611298-611253-260-710-509-03","category":"LA","subcategory":"Load Adjustment","applied_rows":2,"applied_dollars":105.81,"proposed_ripening":false},{"charge_id":"019c49c2-b1bb-1bf1-0a87-ecb10041926a","name":"LA - WH - Quarantine Netting - Truganina - Coles Tasmania per pallet","ct_scope":"MD-Load Adjustment","ct_code":"500000","account_code":"641324-641325-260-515-521-03","category":"LA","subcategory":"Load Adjustment","applied_rows":1,"applied_dollars":99,"proposed_ripening":false},{"charge_id":"019c21f1-5d24-c82e-dfee-986d16623893","name":"LA - Load Adjustment - Levy ABGC","ct_scope":"MD-Load Adjustment","ct_code":"500000","account_code":"611298-611221-260-710-509-03","category":"LA","subcategory":"Load Adjustment","applied_rows":3,"applied_dollars":55.36,"proposed_ripening":false},{"charge_id":"019c21f2-41d0-6cbd-d975-892c2f3c4831","name":"LA - Load Adjustment - Labelling Truganina - Semi Ripe 15kg","ct_scope":"MD-Load Adjustment","ct_code":"500000","account_code":"641324-641325-260-515-521-03","category":"LA","subcategory":"Load Adjustment","applied_rows":2,"applied_dollars":6.73,"proposed_ripening":false},{"charge_id":"019bdd98-5d12-6f38-d8b5-bea34b160613","name":"LA - Banana Import Levy","ct_scope":"MD-Load Adjustment","ct_code":"500000","account_code":"611233 -611234--260-710-509-04","category":"LA","subcategory":"Load Adjustment","applied_rows":2,"applied_dollars":-4.55,"proposed_ripening":false},{"charge_id":"0198e9c7-bc07-b823-8a8d-47c592b5fc95","name":"LA - Freight Credit - Blenners","ct_scope":"MD-Load Adjustment","ct_code":"500000","account_code":"611274-611275-260-710-509-03","category":"LA","subcategory":"Load Adjustment","applied_rows":1,"applied_dollars":-66.07,"proposed_ripening":false},{"charge_id":"019db36b-1512-9605-6242-28da61fe5121","name":"LA - Ripening - QPI Banana 15kg","ct_scope":"MD-Load Adjustment","ct_code":"500000","account_code":"641321-641322-260-710-509-03","category":"LA","subcategory":"Load Adjustment","applied_rows":1,"applied_dollars":-185.5,"proposed_ripening":false},{"charge_id":"0199eb7a-8ac2-1901-6cdf-7ed6421bf6ba","name":"LA - Commission - Agent","ct_scope":"MD-Load Adjustment","ct_code":"500000","account_code":"611298-418045-260-710-509-03","category":"LA","subcategory":"Load Adjustment","applied_rows":8,"applied_dollars":-1825.2,"proposed_ripening":false},{"charge_id":"0197ecc9-e1da-f2b0-0240-e982a1021715","name":"LA - Banana Sales","ct_scope":"MD-Load Adjustment","ct_code":"500000","account_code":"641210-641211-260-710-509-02","category":"LA","subcategory":"Load Adjustment","applied_rows":27,"applied_dollars":-43980.76,"proposed_ripening":false},{"charge_id":"0195b146-f6ff-bdce-ad90-27adce588581","name":"MD - Commission - Coles 4.5%","ct_scope":"MD - Commission","ct_code":"310000","account_code":"611298-418045-260-710-509-03","category":"MD","subcategory":"Commission","applied_rows":6960,"applied_dollars":4057249.49,"proposed_ripening":false},{"charge_id":"0195db0f-d14e-19a2-1b83-35e7d2b06c83","name":"MD - Commission - Woolworths 4.5%","ct_scope":"MD - Commission","ct_code":"310000","account_code":"611298-418045-260-710-509-03","category":"MD","subcategory":"Commission","applied_rows":4103,"applied_dollars":2455159.41,"proposed_ripening":false},{"charge_id":"01976672-d620-2847-66ef-c28ebd7e6c6b","name":"MD - Retail Rebate - Coles 2.5%","ct_scope":"MD - Retail Rebate","ct_code":"330000","account_code":"611202-611201-260-710-509-04","category":"MD","subcategory":"Retail Rebate","applied_rows":7244,"applied_dollars":2351887.37,"proposed_ripening":false},{"charge_id":"01957fc9-3b29-53e2-f339-e7cc5a61d2c3","name":"MD - Retail Rebate - Woolworths 2.5%","ct_scope":"MD - Retail Rebate","ct_code":"330000","account_code":"611202-611201-260-710-509-04","category":"MD","subcategory":"Retail Rebate","applied_rows":4103,"applied_dollars":1398941.43,"proposed_ripening":false},{"charge_id":"019618c5-6246-f984-30df-42ed7f01ff3a","name":"MD - Levy - Banana Compulsory","ct_scope":"MD- Levy C","ct_code":"320000","account_code":"611298-611225-260-710-509-04","category":"MD","subcategory":"Levy C","applied_rows":6813,"applied_dollars":1338289.22,"proposed_ripening":false},{"charge_id":"0196191a-ee03-7a84-91b5-2be7066130b0","name":"MD - Packaging Fees - Coles Band Fee Bananas","ct_scope":"MD - Packaging","ct_code":"340000","account_code":"611298-611251-260-710-509-03","category":"MD","subcategory":"Packaging","applied_rows":1782,"applied_dollars":754081.2,"proposed_ripening":false},{"charge_id":"01961903-129f-65f5-70f0-6f262b797eb5","name":"MD - Levy - Panama Voluntary","ct_scope":"MD- Levy","ct_code":"320000","account_code":"611298-611237-260-710-509-03","category":"MD","subcategory":"Levy","applied_rows":5840,"applied_dollars":616094.41,"proposed_ripening":false},{"charge_id":"01961dfb-89b0-071f-9358-e89b277d79ff","name":"MD - Commission - Aldi 4.5%","ct_scope":"MD - Commission","ct_code":"310000","account_code":"611298-418045-260-710-509-03","category":"MD","subcategory":"Commission","applied_rows":2096,"applied_dollars":595232.96,"proposed_ripening":false},{"charge_id":"0195fa3b-f0b9-75ee-f6dd-a7442abb9db7","name":"MD - Packaging Fees - WOW Collar Fee - Bananas","ct_scope":"MD - Packaging","ct_code":"340000","account_code":"611298-611251-260-710-509-03","category":"MD","subcategory":"Packaging","applied_rows":784,"applied_dollars":490304.67,"proposed_ripening":false},{"charge_id":"0195d0e8-be2d-c21a-9830-e74a1a9a2ff1","name":"MD - Commission - Wholesale 3%","ct_scope":"MD - Commission","ct_code":"310000","account_code":"611298-418045-260-710-509-03","category":"MD","subcategory":"Commission","applied_rows":4021,"applied_dollars":401144.74,"proposed_ripening":false},{"charge_id":"0195c5e7-50f9-40be-4843-dc6efd2ca0dc","name":"MD - Levy - ABGC","ct_scope":"MD- Levy","ct_code":"320000","account_code":"611298-611221-260-710-509-03","category":"MD","subcategory":"Levy","applied_rows":5330,"applied_dollars":89338.79,"proposed_ripening":false},{"charge_id":"019b43ad-0b9c-44c4-df71-180ee2c8c02a","name":"MD - Levy - Banana Import Voluntary","ct_scope":"MD- Levy","ct_code":"320000","account_code":"611298-611233-260-710-509-04","category":"MD","subcategory":"Levy","applied_rows":2267,"applied_dollars":85992.79,"proposed_ripening":false},{"charge_id":"019618c3-ff80-4992-aefa-2b3dbe14ea4c","name":"MD - Levy - Avocado Compulsory","ct_scope":"MD- Levy C","ct_code":"320000","account_code":"611298-611223-260-710-509-04","category":"MD","subcategory":"Levy C","applied_rows":1295,"applied_dollars":61947.83,"proposed_ripening":false},{"charge_id":"0197afc5-0dbb-0753-89a9-687880d1428c","name":"MD - Commission - Agent","ct_scope":"MD - Commission","ct_code":"310000","account_code":"611298-418045-260-710-509-03","category":"MD","subcategory":"Commission","applied_rows":177,"applied_dollars":53562.58,"proposed_ripening":false},{"charge_id":"01961904-9382-363f-98cc-f7df66582acc","name":"MD - Levy - Papaya Compulsory","ct_scope":"MD- Levy C","ct_code":"320000","account_code":"611298-611227-260-710-509-04","category":"MD","subcategory":"Levy C","applied_rows":2490,"applied_dollars":47179.54,"proposed_ripening":false},{"charge_id":"01965a2e-fd8c-1cce-ede2-0e5ffa4ce458","name":"MD - Inspection Fee - WA DAWR Inspection Fee","ct_scope":"MD - Inspection Fees","ct_code":"360000","account_code":"611262-611261-260-710-509-04","category":"MD","subcategory":"Inspection Fees","applied_rows":210,"applied_dollars":15633.55,"proposed_ripening":false},{"charge_id":"019a5b6a-dfb4-d216-3c27-4c2e0cf2a65d","name":"MD - Promotion - Aldi Camp Quality Donation","ct_scope":"MD - Promotion","ct_code":"350000","account_code":"611241-611279-260-710-509-04","category":"MD","subcategory":"Promotion","applied_rows":5,"applied_dollars":14520,"proposed_ripening":false},{"charge_id":"019a5b71-ca0d-ffa0-c9d8-3d82fb178555","name":"MD - Promotion - Coles Little Athletics Incentive","ct_scope":"MD - Promotion","ct_code":"350000","account_code":"611298-611243-260-710-509-04","category":"MD","subcategory":"Promotion","applied_rows":9,"applied_dollars":9915.32,"proposed_ripening":false},{"charge_id":"01965a4e-fdb9-1925-c2db-02256c54a627","name":"MD - Levy - Passionfruit 5kg","ct_scope":"MD- Levy P","ct_code":"320000","account_code":"611298-611299-260-710-509-04","category":"MD","subcategory":"Levy P","applied_rows":148,"applied_dollars":4203.2,"proposed_ripening":false},{"charge_id":"0195d0e9-225b-4992-c20c-fcfc4de50c41","name":"MD - Commission - Woolworths Avos 4%","ct_scope":"MD - Commission","ct_code":"310000","account_code":"611298-418045-260-710-509-03","category":"MD","subcategory":"Commission","applied_rows":14,"applied_dollars":1600.13,"proposed_ripening":false},{"charge_id":"0195a263-d8fc-7e49-d75c-909bd4c4d46c","name":"MD - Retail Rebate - Woolworths 3% - Avocado","ct_scope":"MD - Retail Rebate","ct_code":"330000","account_code":"611202-611201-260-710-509-04","category":"MD","subcategory":"Retail Rebate","applied_rows":14,"applied_dollars":1237.23,"proposed_ripening":false},{"charge_id":"01965a9a-6ccb-8490-7f19-97993cfcb2fe","name":"MD - Promotion - WOW Hass Promotional Levy","ct_scope":"MD - Promotion","ct_code":"350000","account_code":"611298-611245-260-710-509-03","category":"MD","subcategory":"Promotion","applied_rows":15,"applied_dollars":840.4,"proposed_ripening":false},{"charge_id":"01965a9d-2d35-defa-b360-fc88352ab408","name":"MD - Promotion - WOW Banana Promotional Levy","ct_scope":"MD - Promotion","ct_code":"350000","account_code":"611298-611245-260-710-509-03","category":"MD","subcategory":"Promotion","applied_rows":2,"applied_dollars":740,"proposed_ripening":false},{"charge_id":"01981055-add3-9736-edf6-fa651bf5e50d","name":"MI - Brismark Testing","ct_scope":"MI -","ct_code":"410000","account_code":"611298-611255-260-710-509-03","category":"MI","subcategory":"Brismark Testing","applied_rows":58,"applied_dollars":10762.45,"proposed_ripening":false},{"charge_id":"0194b473-75ed-6f29-35da-4eafa5fa7f63","name":"WH - Ripening - Truganina - Banana 15kg","ct_scope":"WH - Ripening","ct_code":"210000","account_code":"641321-641322-260-515-521-03","category":"WH","subcategory":"Ripening","applied_rows":2637,"applied_dollars":3925803.57,"proposed_ripening":true},{"charge_id":"0195b60a-b4ef-ddec-aee0-9242a5a2bd24","name":"WH - Ripening - Larapinta - Banana 15kg","ct_scope":"WH - Ripening","ct_code":"210000","account_code":"641321-641322-260-515-511-03","category":"WH","subcategory":"Ripening","applied_rows":1099,"applied_dollars":743604.76,"proposed_ripening":true},{"charge_id":"0195ac76-c8c3-6f60-a068-a05516c283d3","name":"WH - Ripening - Ann Rd - Banana 15kg","ct_scope":"WH - Ripening","ct_code":"210000","account_code":"641321-641322-260-515-508-03","category":"WH","subcategory":"Ripening","applied_rows":2259,"applied_dollars":642210.09,"proposed_ripening":true},{"charge_id":"0195b671-566a-2396-0d26-975e0f7e699d","name":"WH - Ripening - Truganina - Coles Kids Packs","ct_scope":"WH - Ripening","ct_code":"210000","account_code":"641321-641322-260-515-521-03","category":"WH","subcategory":"Ripening","applied_rows":1400,"applied_dollars":525017.25,"proposed_ripening":true},{"charge_id":"019618fd-a57c-a62b-24a6-a2afafdd1ad0","name":"WH - Ripening - QPI - Banana 15kg","ct_scope":"WH - Ripening","ct_code":"210000","account_code":"641321-641322-260-710-509-03","category":"WH","subcategory":"Ripening","applied_rows":365,"applied_dollars":152666.5,"proposed_ripening":true},{"charge_id":"0195ac7d-8969-4427-4b92-ef0ed26dfca9","name":"WH - Ripening - Ann Rd - WOW Collars","ct_scope":"WH - Ripening","ct_code":"210000","account_code":"641321-641322-260-515-508-03","category":"WH","subcategory":"Ripening","applied_rows":384,"applied_dollars":97428.13,"proposed_ripening":true},{"charge_id":"0195b623-3fae-c2d7-85a9-ffb1ec81d9e3","name":"WH - Handling - Larapinta - Papaya 10kg","ct_scope":"WH - Handling","ct_code":"220000","account_code":"641361-641362-260-515-511-03","category":"WH","subcategory":"Handling","applied_rows":378,"applied_dollars":84355.17,"proposed_ripening":false},{"charge_id":"0195b674-51cb-eb3e-7ce6-3cc3d08374e6","name":"WH - Ripening - Truganina - Avocado Trays","ct_scope":"WH - Ripening","ct_code":"210000","account_code":"641306-641307-260-515-521-03","category":"WH","subcategory":"Ripening","applied_rows":361,"applied_dollars":78424.36,"proposed_ripening":true},{"charge_id":"0195ac7b-4069-6988-a963-bcbab88d6631","name":"WH - Ripening - Ann Rd - Coles Kids Packs","ct_scope":"WH - Ripening","ct_code":"210000","account_code":"641321-641322-260-515-508-03","category":"WH","subcategory":"Ripening","applied_rows":381,"applied_dollars":73781.35,"proposed_ripening":true},{"charge_id":"0195b625-6442-9d59-df62-0b65f28eb843","name":"WH - Handling - Larapinta - Papaya 6kg","ct_scope":"WH - Handling","ct_code":"220000","account_code":"641361-641362-260-515-511-03","category":"WH","subcategory":"Handling","applied_rows":658,"applied_dollars":67959.54,"proposed_ripening":false},{"charge_id":"0195acd9-2603-0ed7-f83c-1f0a4c658b61","name":"WH - Ripening - Ann Rd - Avocado Trays","ct_scope":"WH - Ripening","ct_code":"210000","account_code":"641306-641307-260-515-508-03","category":"WH","subcategory":"Ripening","applied_rows":239,"applied_dollars":45156.1,"proposed_ripening":true},{"charge_id":"0195b676-f43a-6bb5-a14b-05f4e44fc502","name":"WH - Handling - Truganina - Papaya 6kg","ct_scope":"WH - Handling","ct_code":"220000","account_code":"641361-641362-260-515-521-03","category":"WH","subcategory":"Handling","applied_rows":173,"applied_dollars":37052.19,"proposed_ripening":false},{"charge_id":"01965a32-a705-77fc-354a-a7735b4f7e16","name":"WH - Labelling - Truganina - Semi Ripe 15kg","ct_scope":"WH - Labelling","ct_code":"230000","account_code":"641324-641325-260-515-521-03","category":"WH","subcategory":"Labelling","applied_rows":658,"applied_dollars":34055.24,"proposed_ripening":false},{"charge_id":"01961d94-2612-db4e-3a12-84e48dd4755a","name":"WH - Packing - Simply Fruits - Im Perfect - Hass","ct_scope":"WH - Packing","ct_code":"240000","account_code":"611298-611257-260-710-509-03","category":"WH","subcategory":"Packing","applied_rows":57,"applied_dollars":26545.5,"proposed_ripening":false},{"charge_id":"019618ef-b1eb-36fa-e01d-2746fc622622","name":"WH - Handling - APP EC - Papaya 6kg","ct_scope":"WH - Handling","ct_code":"220000","account_code":"611298-611253-260-710-509-03","category":"WH","subcategory":"Handling","applied_rows":256,"applied_dollars":26140,"proposed_ripening":false},{"charge_id":"0197be91-f720-28a9-c6ad-c783822505d8","name":"WH - Handling - Simply Fruits - Papaya 6kg","ct_scope":"WH - Handling","ct_code":"220000","account_code":"611298-611253-260-710-509-03","category":"WH","subcategory":"Handling","applied_rows":394,"applied_dollars":25384,"proposed_ripening":false},{"charge_id":"019cd4f9-0e50-30ac-7776-5fce3fcc7975","name":"WH - Packing - Murray Bros -Avocado 5 Pack - Shepard","ct_scope":"WH - Packing","ct_code":"240000","account_code":"611298-611257-260-710-509-03","category":"WH","subcategory":"Packing","applied_rows":47,"applied_dollars":24740.64,"proposed_ripening":false},{"charge_id":"0195b614-c521-194a-6a64-e32ffaa77c85","name":"WH - Ripening - Larapinta - Banana 13kg","ct_scope":"WH - Ripening","ct_code":"210000","account_code":"641321-641322-260-515-511-03","category":"WH","subcategory":"Ripening","applied_rows":61,"applied_dollars":23714.88,"proposed_ripening":true},{"charge_id":"0195b627-df1d-d06e-c02d-f3557ebc4df4","name":"WH - Handling - Larapinta - Passionfruit 5kg","ct_scope":"WH - Handling","ct_code":"220000","account_code":"641364-641365-260-515-511-03","category":"WH","subcategory":"Handling","applied_rows":193,"applied_dollars":20203.04,"proposed_ripening":false},{"charge_id":"0195b60b-7da2-8bbb-a9b4-3f76f4228a3f","name":"WH - Ripening - Larapinta - WOW Collars","ct_scope":"WH - Ripening","ct_code":"210000","account_code":"641321-641322-260-515-511-03","category":"WH","subcategory":"Ripening","applied_rows":32,"applied_dollars":19758.6,"proposed_ripening":true},{"charge_id":"01965a15-752d-579d-2098-b189db2872ac","name":"WH - Quarantine Netting - Truganina - Coles Tasmania per pallet","ct_scope":"WH - Packaging","ct_code":"260000","account_code":"641324-641325-260-515-521-03","category":"WH","subcategory":"Packaging","applied_rows":291,"applied_dollars":18325.5,"proposed_ripening":false},{"charge_id":"0195ac83-3fa9-6938-881b-ae8c35b603e6","name":"WH - Handling - Ann Rd - Papaya 10kg","ct_scope":"WH - Handling","ct_code":"220000","account_code":"641361-641362-260-515-508-03","category":"WH","subcategory":"Handling","applied_rows":345,"applied_dollars":18311.44,"proposed_ripening":false},{"charge_id":"01961d94-9b43-15c8-bbfc-09b304fbfdd6","name":"WH - Packing - Simply Fruits - Avocado 5 Pack - Hass","ct_scope":"WH - Packing","ct_code":"240000","account_code":"611298-611257-260-710-509-03","category":"WH","subcategory":"Packing","applied_rows":31,"applied_dollars":16779,"proposed_ripening":false},{"charge_id":"0195b60d-40c3-57dd-d9f1-75018e3d8265","name":"WH - Ripening - Larapinta - Avocado Trays","ct_scope":"WH - Ripening","ct_code":"210000","account_code":"641306-641307-260-515-511-03","category":"WH","subcategory":"Ripening","applied_rows":65,"applied_dollars":15694.9,"proposed_ripening":true},{"charge_id":"019cd4fb-50cb-5f7e-de9a-634a25aa11fa","name":"WH - Packing - Murray Bros -Im Perfect - Shepard","ct_scope":"WH - Packing","ct_code":"240000","account_code":"611298-611257-260-710-509-03","category":"WH","subcategory":"Packing","applied_rows":46,"applied_dollars":15603.84,"proposed_ripening":false},{"charge_id":"0195aca1-5fe3-9466-c8e0-4245b920f5ce","name":"WH - Handling - Ann Rd - Papaya 6kg","ct_scope":"WH - Handling","ct_code":"220000","account_code":"641361-641362-260-515-508-03","category":"WH","subcategory":"Handling","applied_rows":235,"applied_dollars":12184.16,"proposed_ripening":false},{"charge_id":"019ecec6-8ed4-96e0-ab07-325770e720f2","name":"WH - Ripening - Epping - Banana 15kg","ct_scope":"WH - Ripening","ct_code":"210000","account_code":"641321-641322-260-515-526-03","category":"WH","subcategory":"Ripening","applied_rows":6,"applied_dollars":8268,"proposed_ripening":true},{"charge_id":"019872e2-8168-68d4-c752-b727cdafd8c7","name":"WH - Ripening - Ann Rd - Banana 10kg","ct_scope":"WH - Ripening","ct_code":"210000","account_code":"641321-641322-260-515-508-03","category":"WH","subcategory":"Ripening","applied_rows":155,"applied_dollars":7529.76,"proposed_ripening":true},{"charge_id":"0195ac80-29f4-b606-3988-874107834098","name":"WH - Ripening - Ann Rd - Banana 13kg","ct_scope":"WH - Ripening","ct_code":"210000","account_code":"641321-641322-260-515-508-03","category":"WH","subcategory":"Ripening","applied_rows":102,"applied_dollars":7009.92,"proposed_ripening":true},{"charge_id":"0195b116-ce5b-b9a7-ec4a-91b05b3bb3fd","name":"WH - Ripening - Ann Rd - Lady Fingers","ct_scope":"WH - Ripening","ct_code":"210000","account_code":"641321-641322-260-515-508-03","category":"WH","subcategory":"Ripening","applied_rows":90,"applied_dollars":6769.68,"proposed_ripening":true},{"charge_id":"01965a91-fe04-8f83-416e-6816f55cd557","name":"WH - Handling - APP Eastern Creek - Hourly Labour Charge - Papaya","ct_scope":"WH  - Handling","ct_code":"220000","account_code":"611298-611253-260-710-509-03","category":"WH","subcategory":"Handling","applied_rows":12,"applied_dollars":5430,"proposed_ripening":false},{"charge_id":"01985995-c92f-4842-b912-aa8498e8ebd2","name":"WH - Handling - Truganina - Mumford Wholesalers","ct_scope":"WH - Handling","ct_code":"220000","account_code":"611298-641253-260-515-521-03","category":"WH","subcategory":"Handling","applied_rows":18,"applied_dollars":4448.4,"proposed_ripening":false},{"charge_id":"0199dfd0-db64-8cff-a650-ec0036340c9b","name":"WH - Ripening - Truganina - Banana 13kg","ct_scope":"WH - Ripening","ct_code":"210000","account_code":"641321-641322-260-515-521-03","category":"WH","subcategory":"Ripening","applied_rows":4,"applied_dollars":3415.5,"proposed_ripening":true},{"charge_id":"01984f58-e7d0-4f3a-48c6-be7ad8b5f7f9","name":"WH - Storage - Fruit Wheels - Fruit WheelsCold Storage","ct_scope":"WH - Storage","ct_code":"250000","account_code":"611298-511055-260-710-509-03","category":"WH","subcategory":"Storage","applied_rows":117,"applied_dollars":2878.01,"proposed_ripening":false},{"charge_id":"019c20ec-c7e4-548f-86cd-a62c763d5c1b","name":"WH - Ripening - DBM - Coles Bands","ct_scope":"WH - Ripening","ct_code":"210000","account_code":"641321-641322-260-710-509-03","category":"WH","subcategory":"Ripening","applied_rows":2,"applied_dollars":1749,"proposed_ripening":true},{"charge_id":"0195b627-198c-e2f6-77d4-46f59d72b531","name":"WH - Handling - Larapinta - Banana 15kg (Green)","ct_scope":"WH - Handling","ct_code":"220000","account_code":"641324-641325-260-515-511-03","category":"WH","subcategory":"Handling","applied_rows":1,"applied_dollars":1216.44,"proposed_ripening":false},{"charge_id":"019ecec8-7300-3ab3-e992-80904e479264","name":"WH - Ripening - Epping - Banana 13kg","ct_scope":"WH - Ripening","ct_code":"210000","account_code":"641321-641322-260-515-526-03","category":"WH","subcategory":"Ripening","applied_rows":3,"applied_dollars":1049.4,"proposed_ripening":true},{"charge_id":"01965a94-e86d-1774-16e7-8e4a2aaf5bc6","name":"WH - Handling - Larapinta - Hourly Labour Charge - Bananas","ct_scope":"WH  - Handling","ct_code":"220000","account_code":"641324-641325-260-515-511-03","category":"WH","subcategory":"Handling","applied_rows":2,"applied_dollars":1000,"proposed_ripening":false},{"charge_id":"0197ec7f-a500-0570-7924-5770ae65a136","name":"WH - Handling - Truganina - Cross Dock Bananas","ct_scope":"WH - Handling","ct_code":"220000","account_code":"641324-641325-260-515-521-03","category":"WH","subcategory":"Handling","applied_rows":4,"applied_dollars":860,"proposed_ripening":false},{"charge_id":"0195ad16-30ce-12e7-5eb3-6c70bd270f5e","name":"WH - Ripening - Ann Rd - Organics 10kg","ct_scope":"WH - Ripening","ct_code":"210000","account_code":"641321-641322-260-515-508-03","category":"WH","subcategory":"Ripening","applied_rows":18,"applied_dollars":536.28,"proposed_ripening":true},{"charge_id":"01961d47-9bf9-7b9e-02c6-3a1421a7587b","name":"WH - Handling - Costas Adelaide - Cooling Fee - Prepacks","ct_scope":"WH - Handling","ct_code":"220000","account_code":"611298-611253-260-710-509-03","category":"WH","subcategory":"Handling","applied_rows":3,"applied_dollars":243.54,"proposed_ripening":false},{"charge_id":"0199c0a5-e12a-a569-15ab-2d70feabe621","name":"WH - Labelling - Larapinta - Eat Later 15kg","ct_scope":"WH - Labelling","ct_code":"230000","account_code":"641324-641325-260-515-511-03","category":"WH","subcategory":"Labelling","applied_rows":1,"applied_dollars":235.44,"proposed_ripening":false},{"charge_id":"019c68f5-5a12-79b2-aa11-575d1f380301","name":"WH - Handling - Truganina - Papaya 10kg","ct_scope":"WH - Handling","ct_code":"220000","account_code":"641361-641362-260-515-521-03","category":"WH","subcategory":"Handling","applied_rows":3,"applied_dollars":146.16,"proposed_ripening":false},{"charge_id":"01981118-be20-ec1e-f830-51802a914e83","name":"WH - Handling - Truganina - Cross Dock Avocados","ct_scope":"WH - Handling","ct_code":"220000","account_code":"641324-641325-260-515-521-03","category":"WH","subcategory":"Handling","applied_rows":1,"applied_dollars":120,"proposed_ripening":false},{"charge_id":"01961d47-01ad-be69-5e96-4f5e7d7f87a3","name":"WH - Handling - Costas Adelaide - Cooling Fee - 15kg","ct_scope":"WH - Handling","ct_code":"220000","account_code":"611298-611253-260-710-509-03","category":"WH","subcategory":"Handling","applied_rows":1,"applied_dollars":118.8,"proposed_ripening":false},{"charge_id":"019c021d-6886-295b-fc32-b45c1864c062","name":"WH - Handling - SQBR - SQBR Unloading Fee 15kg","ct_scope":"WH - Handling","ct_code":"220000","account_code":"611298-611253-260-710-509-03","category":"WH","subcategory":"Handling","applied_rows":1,"applied_dollars":86,"proposed_ripening":false},{"charge_id":"019c021e-d58c-142a-5501-e7ef5d98f932","name":"WH - Handling - SQBR - SQBR Unloading Fee 13kg","ct_scope":"WH - Handling","ct_code":"220000","account_code":"611298-611253-260-710-509-03","category":"WH","subcategory":"Handling","applied_rows":1,"applied_dollars":85,"proposed_ripening":false},{"charge_id":"019d8907-7318-bc7f-1c11-b33049b6ca7a","name":"WH - Handling - Ann Rd - Cross Dock Bananas","ct_scope":"WH - Handling","ct_code":"220000","account_code":"641324-641325-260-515-508-03","category":"WH","subcategory":"Handling","applied_rows":1,"applied_dollars":80,"proposed_ripening":false}];
+var ACCTS = [{"account_code":"121035","sample_label":"FR - Blenners - Road - Lakeland to Victoria  - Chilled per 15kg carton Split 100.0% 15kg Carton","applied_rows":42,"applied_dollars":182756.3},{"account_code":"121023","sample_label":"FR - Blenners - Road - Tully to Perth - Chilled per 15kg carton   Split 100.0% 15kg Carton","applied_rows":25,"applied_dollars":152461.16},{"account_code":"103003","sample_label":"FR - Coles Collect - Road - Truganina to Adelaide - Chilled per Space  Split 100.0% 15kg Carton","applied_rows":164,"applied_dollars":121819.56},{"account_code":"121010","sample_label":"FR - Blenners - Road - Tully to Brisbane - Chilled per 15kg carton   Split 100.0% 15kg Carton","applied_rows":48,"applied_dollars":116318.73},{"account_code":"121034","sample_label":"FR - Blenners - Road - Lakeland to Victoria   Split 25.0% 5kg Carton","applied_rows":37,"applied_dollars":115452.94},{"account_code":"121030","sample_label":"FR - Blenners - Road - Lakeland to Brisbane - Chilled per 15kg carton   Split 100.0% 15kg Carton","applied_rows":25,"applied_dollars":86643.56},{"account_code":"121020","sample_label":"FR - Blenners - Road - Tully to Victoria - Chilled per 15kg carton   Split 100.0% 15kg Carton","applied_rows":20,"applied_dollars":81552.96},{"account_code":"121008","sample_label":"FR - Blenners - Road - Tully to Townsville - Chilled per Space   Split 0.9% Avo Tray","applied_rows":658,"applied_dollars":74016.86},{"account_code":"103001","sample_label":"FR - Coles Collect - Road - Truganina to Truganina - Chilled per Space  Split 0.4% 15kg Carton","applied_rows":691,"applied_dollars":73746.49},{"account_code":"121016","sample_label":"FR - Blenners - Road - Tully to Sydney - Chilled per 13kg carton   Split 100.0% 13kg Carton","applied_rows":41,"applied_dollars":50265.51},{"account_code":"121019","sample_label":"FR - Blenners - Road - Tully to Victoria - Chilled per 13kg carton   Split 100.0% Coles Bands","applied_rows":21,"applied_dollars":48968.95},{"account_code":"116004","sample_label":"FR - DDS - Road - Larapinta  to Brendale  - Chilled per Space  Split 1.6% 6kg Tray - Papaya","applied_rows":202,"applied_dollars":43708.47},{"account_code":"121002","sample_label":"FR - Blenners - Rail - Tully to Brisbane - Chilled per 15kg Carton Split 100.0% 15kg Carton","applied_rows":14,"applied_dollars":42925.17},{"account_code":"102007","sample_label":"FR - Followmont Transport - Road - Tully to Melbourne - Chilled per Space Split 0.8% 10kg Carton","applied_rows":129,"applied_dollars":42684.92},{"account_code":"121037","sample_label":"FR - Blenners - Road - Lakeland to Perth - Chilled per 15kg carton   Split 100.0% 15kg Carton","applied_rows":8,"applied_dollars":35275.38},{"account_code":"121028","sample_label":"FR - Blenners - Road - Lakeland to Townsville  - Chilled per Space Split 100.0% 15kg Carton","applied_rows":28,"applied_dollars":31020},{"account_code":"121039","sample_label":"FR - Blenners - Road - Lakeland to Adelaide - Chilled per 15kg carton   Split 100.0% 15kg Carton","applied_rows":12,"applied_dollars":26849.27},{"account_code":"102004","sample_label":"FR - Followmont Transport - Road - Tully to Sydney - Chilled per Space Split 0.7% 10kg Carton","applied_rows":103,"applied_dollars":26240.5},{"account_code":"121022","sample_label":"FR - Blenners - Road - Tully to Perth - Chilled per 13kg carton   Split 100.0% 13kg Carton","applied_rows":10,"applied_dollars":25942.96},{"account_code":"121036","sample_label":"FR - Blenners - Road - Lakeland to Perth - Chilled per 13kg carton   Split 100.0% 13kg Carton","applied_rows":8,"applied_dollars":23451.24},{"account_code":"121032","sample_label":"FR - Blenners - Road - Lakeland to Sydney - Chilled per 13kg carton   Split 100.0% 13kg Carton","applied_rows":8,"applied_dollars":17491.84},{"account_code":"121049","sample_label":"FR - Blenners - Rail - Lakeland to Brisbane - Chilled per Space Split 100.0% 15kg Carton","applied_rows":6,"applied_dollars":17185.52},{"account_code":"116005","sample_label":"FR - DDS - Road - Larapinta  to Stapylton  - Chilled per Space Split 10.4% 15kg Carton","applied_rows":105,"applied_dollars":17052.32},{"account_code":"121031","sample_label":"FR - Blenners - Road - Lakeland to Brisbane  - Chilled per Space Split 10.0% 5kg Carton","applied_rows":19,"applied_dollars":16147.26},{"account_code":"121011","sample_label":"FR - Blenners - Road - Tully to Brisbane - Chilled per Space   Split 0.7% 10kg Carton","applied_rows":44,"applied_dollars":15534.22},{"account_code":"121017","sample_label":"FR - Blenners - Road - Tully to Sydney - Chilled per 15kg carton   Split 100.0% 15kg Carton","applied_rows":4,"applied_dollars":13416.58},{"account_code":"121033","sample_label":"FR - Blenners - Road - Lakeland to Sydney - Chilled per 15kg carton   Split 100.0% 15kg Carton","applied_rows":7,"applied_dollars":11550.15},{"account_code":"121009","sample_label":"FR - Blenners - Road - Tully to Brisbane - Chilled per 13kg carton   Split 100.0% 13kg Carton","applied_rows":19,"applied_dollars":10946.17},{"account_code":"121005","sample_label":"FR - Blenners - Road - Tully to Tully - Chilled per Hourly Body Truck Split 1.4% 10kg Carton","applied_rows":168,"applied_dollars":10818.59},{"account_code":"121098","sample_label":"FR - Blenners - Road - Chilled per Space Outside Market Fee Split 1.4% 10kg Carton","applied_rows":67,"applied_dollars":6031.03},{"account_code":"121029","sample_label":"FR - Blenners - Road - Lakeland to Brisbane - Chilled per 13kg carton   Split 100.0% 13kg Carton","applied_rows":6,"applied_dollars":5271.17},{"account_code":"102002","sample_label":"FR - Followmont Transport - Road - Tully to Brisbane - Chilled per Space Split 1.4% 10kg Carton","applied_rows":35,"applied_dollars":5214.88},{"account_code":"102010","sample_label":"FR - Followmont Transport - Road - Tully to Adelaide - Chilled per Space Split 16.7% 10kg Carton","applied_rows":6,"applied_dollars":4077.51},{"account_code":"101146","sample_label":"FR - Lindsay Transport - Road - Larapinta  to Melbourne - Chilled per Space Papaya Split 100.0% 10kg Carton","applied_rows":27,"applied_dollars":3813.26},{"account_code":"121026","sample_label":"FR - Blenners - Road - Lakeland to Tully - Chilled per Space   Split 100.0% 15kg Carton","applied_rows":5,"applied_dollars":3396.23},{"account_code":"121012","sample_label":"FR - Blenners - Road - Tully to Labrador - Chilled per Space  Split 0.7% 10kg Carton","applied_rows":13,"applied_dollars":3186.48},{"account_code":"121099","sample_label":"FR - Blenners - Road - Chilled per Container/ Truck Fatigue Levy Split 0.6% 10kg Carton","applied_rows":1234,"applied_dollars":3155.45},{"account_code":"116001","sample_label":"FR - DDS - Road - Larapinta  to Larapinta  - Chilled per Space Split 0.5% 10kg Carton","applied_rows":83,"applied_dollars":3085.26},{"account_code":"102011","sample_label":"FR - Followmont Transport - Road - Melbourne to Melbourne - Chilled per Space Split 1.4% 10kg Carton","applied_rows":77,"applied_dollars":2533.29},{"account_code":"120006","sample_label":"FR - Woolworths Primary Connect -Road - Tasmania to Melbourne Markets - Chilled per Space  Split 100.0% 15kg Carton","applied_rows":1,"applied_dollars":2460.62},{"account_code":"121091","sample_label":"FR - Blenners - Road - Tully  to Townsville  - Chilled per Space  Avocado Split 100.0% Avo Tray","applied_rows":27,"applied_dollars":1660.7},{"account_code":"101002","sample_label":"FR - Lindsay Transport - Road - Larapinta  to Eastern Creek - Chilled per Space  Split 100.0% 5kg Carton","applied_rows":18,"applied_dollars":1533.98},{"account_code":"101001","sample_label":"FR - Lindsay Transport - Road - Larapinta  to Sydney   - Chilled per Space  Split 100.0% 5kg Carton","applied_rows":10,"applied_dollars":1530},{"account_code":"107001","sample_label":"FR - Own Transport - Road - Melbourne to Melbourne - Chilled per Space Simply Fruits Split 100.0% 6kg Tray - Papaya","applied_rows":69,"applied_dollars":1500.02},{"account_code":"101147","sample_label":"FR - Lindsay Transport - Road - Larapinta to Townsville - Chilled per Space  Split 100.0% 15kg Carton","applied_rows":1,"applied_dollars":1450.15},{"account_code":"102008","sample_label":"FR - Followmont Transport - Road - Tully to Melbourne - Chilled per Papaya Carton Split 0.8% 10kg Carton","applied_rows":17,"applied_dollars":1251.03},{"account_code":"103002","sample_label":"FR - Coles Collect - Road - Truganina to Tasmania - Chilled per Space Split 100.0% Coles Bands","applied_rows":58,"applied_dollars":1161.6},{"account_code":"108003","sample_label":"FR - Fruit Wheels - Road - Sydney Markets  to Minchinbury  - Chilled per Space Split 0.7% 10kg Carton","applied_rows":42,"applied_dollars":1091.67},{"account_code":"116006","sample_label":"FR - DDS - Road - Larapinta  to Brisbane Markets - Chilled per Space SGBNE Split 100.0% 15kg Carton","applied_rows":28,"applied_dollars":990},{"account_code":"107003","sample_label":"FR - Own Transport - Road - Melbourne to Melbourne - Chilled per Space Simply Fruits - Coles Im Perfect Split 100.0% Coles Im Perfect Crate","applied_rows":21,"applied_dollars":868.76},{"account_code":"121083","sample_label":"FR - Blenners - Road - Lakeland  to Brisbane  - Chilled per Space  Passionfruit Split 29.2% 5kg Carton","applied_rows":4,"applied_dollars":849.6},{"account_code":"108001","sample_label":"FR - Fruit Wheels - Road - Sydney Markets  to Eastern Creek - Chilled per Space Split 100.0% 6kg Tray - Papaya","applied_rows":24,"applied_dollars":739.83},{"account_code":"101003","sample_label":"FR - Lindsay Transport - Road - Larapinta  to Minchinbury  - Chilled per Space  Split 100.0% 5kg Carton","applied_rows":9,"applied_dollars":723.37},{"account_code":"116002","sample_label":"FR - DDS - Road - Larapinta  to Parkinson  - Chilled per Space Split 100.0% 5kg Carton","applied_rows":36,"applied_dollars":705.55},{"account_code":"102013","sample_label":"FR - Followmont Transport - Road - Chilled per Space Pallet fee Split 0.2% 10kg Carton","applied_rows":279,"applied_dollars":584.7},{"account_code":"116007","sample_label":"FR - DDS - Road - Larapinta  to Labrador - Chilled per Space  Split 100.0% 15kg Carton","applied_rows":1,"applied_dollars":566.25},{"account_code":"107002","sample_label":"FR - Own Transport - Road - Melbourne to Melbourne - Chilled per Space Simply Fruits - Coles Split 100.0% Coles 5 Pack Crate","applied_rows":9,"applied_dollars":450},{"account_code":"121041","sample_label":"FR - Blenners - Road - Brisbane to Brisbane - Chilled per Space Split 100.0% 15kg Carton","applied_rows":1,"applied_dollars":421.18},{"account_code":"121001","sample_label":"FR - Blenners - Road - Tully to Brisbane - Chilled per Space  Split 50.0% 6kg Tray - Papaya","applied_rows":2,"applied_dollars":368.16},{"account_code":"102009","sample_label":"FR - Followmont Transport - Road - Tully to Melbourne - Chilled per Papaya Tray Split 100.0% 6kg Tray - Papaya","applied_rows":1,"applied_dollars":353.89},{"account_code":"111006","sample_label":"FR - Robinson's Fresh Solutions - Road - Truganina to Melbourne Markets - Chilled per Space (1-4 Spaces) Split 100.0% 15kg Carton","applied_rows":2,"applied_dollars":230.14},{"account_code":"121069","sample_label":"FR - Blenners - Road - Chilled per Container/ Truck Fatigue Levy Split 10.0% 15kg Carton","applied_rows":78,"applied_dollars":138.97},{"account_code":"121100","sample_label":"FR - Blenners -per Pallet Public Holiday Rate Split 100.0% 15kg Carton","applied_rows":3,"applied_dollars":135},{"account_code":"116003","sample_label":"FR - DDS - Road - Larapinta  to Brisbane Markets - Chilled per Space Split 100.0% 15kg Carton","applied_rows":5,"applied_dollars":108},{"account_code":"107004","sample_label":"FR - Own Transport - Road - Eastern Creek to Sydney Markets  - Chilled per Space  - APP Split 46.2% 6kg Tray - Papaya","applied_rows":2,"applied_dollars":45},{"account_code":"111011","sample_label":"FR - Robinson's Fresh Solutions - Road - Truganina to Melbourne Markets - Chilled per Space Passionfruit Split 100.0% 5kg Carton","applied_rows":1,"applied_dollars":37.59}];
+var ANCHOR = 6379588.03;
+var CLASSES = ["commission","ripening","other_service","cost_recovery","pass_through","na"];
+var CATNAMES = {FR:"FR — Freight", WH:"WH — Warehouse", MD:"MD — Market Deductions",
+                MI:"MI — Misc", LA:"LA — Load Adjustment", OTHER:"Other / unclassified",
+                ACCT:"Account-code-only lines (no charge record — these become account-code rules)"};
+var LSKEY = "revclass_marking_2026-07-09";
+
+var state = {};
+try { state = JSON.parse(localStorage.getItem(LSKEY) || "{}"); } catch (e) { state = {}; }
+// pre-propose ripening (SPRINT) unless already decided
+CHARGES.forEach(function (ch) {
+  var k = "charge:" + ch.charge_id;
+  if (!(k in state) && ch.proposed_ripening) state[k] = "ripening";
+});
+
+function fmt(n) {
+  var neg = n < 0, v = Math.abs(n);
+  var s = "$" + v.toLocaleString("en-AU", {minimumFractionDigits: 2, maximumFractionDigits: 2});
+  return neg ? "(" + s + ")" : s;
+}
+function save() { localStorage.setItem(LSKEY, JSON.stringify(state)); }
+
+function rowEl(kind, key, title, meta, rows, dollars, preproposed) {
+  var row = document.createElement("div");
+  row.className = "row";
+  row.dataset.key = kind + ":" + key;
+  row.dataset.text = (title + " " + meta).toLowerCase();
+  var info = document.createElement("div"); info.className = "info";
+  var nm = document.createElement("div"); nm.className = "nm"; nm.textContent = title;
+  if (preproposed) {
+    var t = document.createElement("span"); t.className = "pp"; t.textContent = "pre-proposed: ripening";
+    nm.appendChild(t);
+  }
+  var mt = document.createElement("div"); mt.className = "meta"; mt.textContent = meta;
+  info.appendChild(nm); info.appendChild(mt);
+  var num = document.createElement("div"); num.className = "num";
+  num.innerHTML = "<div class='d'>" + fmt(dollars) + "</div><div class='r'>" +
+                  rows.toLocaleString() + " lines</div>";
+  var chips = document.createElement("div"); chips.className = "chips";
+  CLASSES.forEach(function (cl) {
+    var b = document.createElement("button");
+    b.className = "chip"; b.dataset.cl = cl; b.textContent = cl;
+    b.onclick = function () { state[row.dataset.key] = cl; save(); paint(row); summary(); };
+    chips.appendChild(b);
+  });
+  var clr = document.createElement("button"); clr.className = "clr"; clr.title = "clear"; clr.textContent = "✕";
+  clr.onclick = function () { delete state[row.dataset.key]; save(); paint(row); summary(); };
+  chips.appendChild(clr);
+  row.appendChild(info); row.appendChild(num); row.appendChild(chips);
+  return row;
+}
+
+function paint(row) {
+  var sel = state[row.dataset.key];
+  row.querySelectorAll(".chip").forEach(function (b) {
+    var on = b.dataset.cl === sel;
+    b.classList.toggle("sel", on);
+    b.style.background = on ? "var(--" + b.dataset.cl + ")" : "";
+  });
+}
+
+var secDefs = [];
+["FR","WH","MD","MI","LA","OTHER"].forEach(function (cat) {
+  var items = CHARGES.filter(function (c) { return c.category === cat; });
+  if (items.length) secDefs.push({cat: cat, items: items, kind: "charge"});
+});
+secDefs.push({cat: "ACCT", items: ACCTS, kind: "acct"});
+
+var host = document.getElementById("sections");
+secDefs.forEach(function (sd) {
+  var sec = document.createElement("div"); sec.className = "section";
+  var h = document.createElement("div"); h.className = "sech";
+  var tot = sd.items.reduce(function (a, i) { return a + i.applied_dollars; }, 0);
+  h.innerHTML = "<h2>" + CATNAMES[sd.cat] + "</h2><span class='sub'>" + sd.items.length +
+                " lines · " + fmt(tot) + "</span>";
+  var bulk = document.createElement("select");
+  bulk.innerHTML = "<option value=''>Mark all visible unmarked as…</option>" +
+    CLASSES.map(function (c) { return "<option>" + c + "</option>"; }).join("");
+  bulk.onclick = function (e) { e.stopPropagation(); };
+  bulk.onchange = function () {
+    if (!bulk.value) return;
+    sec.querySelectorAll(".row").forEach(function (r) {
+      if (!r.classList.contains("hidden") && !state[r.dataset.key]) {
+        state[r.dataset.key] = bulk.value; paint(r);
+      }
+    });
+    save(); summary(); bulk.value = "";
+  };
+  h.appendChild(bulk);
+  var body = document.createElement("div");
+  h.onclick = function () { body.style.display = body.style.display === "none" ? "" : "none"; };
+  sd.items.forEach(function (it) {
+    var row = sd.kind === "charge"
+      ? rowEl("charge", it.charge_id, it.name,
+              (it.ct_scope || "(no scope)") + " · ct " + (it.ct_code || "–") + " · acct " +
+              (it.account_code || "–") + " · " + (it.subcategory || ""),
+              it.applied_rows, it.applied_dollars, it.proposed_ripening)
+      : rowEl("acct", it.account_code, "Account " + it.account_code,
+              "e.g. " + (it.sample_label || ""), it.applied_rows, it.applied_dollars, false);
+    paint(row);
+    body.appendChild(row);
+  });
+  sec.appendChild(h); sec.appendChild(body);
+  host.appendChild(sec);
+});
+
+var filterMode = "all";
+function applyFilter() {
+  var q = document.getElementById("q").value.toLowerCase();
+  document.querySelectorAll(".row").forEach(function (r) {
+    var marked = !!state[r.dataset.key];
+    var vis = (!q || r.dataset.text.indexOf(q) >= 0) &&
+              (filterMode === "all" || (filterMode === "marked") === marked);
+    r.classList.toggle("hidden", !vis);
+  });
+}
+document.getElementById("q").oninput = applyFilter;
+document.querySelectorAll(".fbtn").forEach(function (b) {
+  b.onclick = function () {
+    filterMode = b.dataset.f;
+    document.querySelectorAll(".fbtn").forEach(function (x) { x.classList.toggle("on", x === b); });
+    applyFilter();
+  };
+});
+
+function summary() {
+  var mc = 0, ma = 0, rev = 0, rip = 0;
+  CHARGES.forEach(function (ch) {
+    var cl = state["charge:" + ch.charge_id];
+    if (cl) { mc++; if (cl === "commission" || cl === "ripening" || cl === "other_service") rev += ch.applied_dollars;
+              if (cl === "ripening") rip += ch.applied_dollars; }
+  });
+  ACCTS.forEach(function (a) {
+    var cl = state["acct:" + a.account_code];
+    if (cl) { ma++; if (cl === "commission" || cl === "ripening" || cl === "other_service") rev += a.applied_dollars;
+              if (cl === "ripening") rip += a.applied_dollars; }
+  });
+  document.getElementById("pc").textContent = mc + " / " + CHARGES.length;
+  document.getElementById("pa").textContent = ma + " / " + ACCTS.length;
+  document.getElementById("pb").style.width =
+    Math.round(100 * (mc + ma) / (CHARGES.length + ACCTS.length)) + "%";
+  document.getElementById("rev").textContent = fmt(rev);
+  var d = rip - ANCHOR, tie = document.getElementById("tie");
+  tie.innerHTML = fmt(rip) + " vs " + fmt(ANCHOR) + " → " +
+    (Math.abs(d) < 0.01 ? "<span class='ok'>exact tie ✓</span>"
+                        : "<span class='off'>" + (d > 0 ? "+" : "−") + fmt(Math.abs(d)).replace("$","$") + "</span>");
+}
+summary();
+
+document.getElementById("reset").onclick = function () {
+  if (confirm("Clear ALL markings (including the pre-proposed ripening lines)?")) {
+    state = {}; save();
+    document.querySelectorAll(".row").forEach(paint); summary();
+  }
+};
+
+function csvCell(v) {
+  v = v == null ? "" : String(v);
+  return /[",\n\r]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v;
+}
+document.getElementById("gen").onclick = function () {
+  var un = (CHARGES.length + ACCTS.length) -
+           Object.keys(state).filter(function (k) { return state[k]; }).length;
+  if (un > 0 && !confirm(un + " line(s) are still unmarked — they will be exported with an empty " +
+      "revenue_class. Generate anyway?")) return;
+  var lines = [];
+  lines.push("# mm-data-hub revenue_class marking (SPRINT settlement-bridge checkpoint)");
+  lines.push("# generated: " + new Date().toISOString());
+  lines.push("# feed this file back to Claude to wire core.dim_gp_charge.revenue_class");
+  lines.push("record_type,key,name,ct_scope,ct_code,account_code,category,applied_rows,applied_dollars,revenue_class");
+  CHARGES.forEach(function (ch) {
+    lines.push(["charge", ch.charge_id, ch.name, ch.ct_scope, ch.ct_code, ch.account_code,
+                ch.category, ch.applied_rows, ch.applied_dollars,
+                state["charge:" + ch.charge_id] || ""].map(csvCell).join(","));
+  });
+  ACCTS.forEach(function (a) {
+    lines.push(["account_code", a.account_code, a.sample_label, "", "", a.account_code,
+                "", a.applied_rows, a.applied_dollars,
+                state["acct:" + a.account_code] || ""].map(csvCell).join(","));
+  });
+  var blob = new Blob([lines.join("\r\n")], {type: "text/csv;charset=utf-8"});
+  var aEl = document.createElement("a");
+  aEl.href = URL.createObjectURL(blob);
+  aEl.download = "revenue_class_marking_2026-07-09.csv";
+  document.body.appendChild(aEl); aEl.click();
+  setTimeout(function () { URL.revokeObjectURL(aEl.href); aEl.remove(); }, 500);
+};
+</script>
+</body>
+</html>
