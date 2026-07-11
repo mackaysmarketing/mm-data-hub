@@ -5,10 +5,15 @@
 // Proves the single→set switch (migration 0026) against the LIVE hub:
 //   A2  current_consignor_ids() returns uuid[]: array→array, scalar→1-elem, none→empty, app_metadata-only
 //   A3  every grower_own_* policy filters `= ANY(current_consignor_ids())`; none uses the scalar shim
-//   A4  a LEGACY single-consignor_id token reproduces the A0 baseline counts exactly
+//   A4  a LEGACY single-consignor_id token reproduces the owner-derived per-consignor counts exactly
 //   A5  a [A,B] token returns rows for A and B only (by-consignor breakdown); unrelated C → 0
 //   A6  farm A sees 0 of B; no-claim & empty-set → 0; functions never error on missing/malformed
 //   A7  an internal token returns the full unfiltered count on every grower table
+//
+// Expected counts are DERIVED IN-RUN as the table owner (RLS does not apply to the owner), so the
+// proof cannot rot as data grows — the original hardcoded A0 snapshot (2026-07-01) failed 15/45 on
+// pure data drift after the first freshness load (closeout sprint C6). The invariant is unchanged:
+// an RLS-scoped count must equal the owner-derived truth for the same consignor filter.
 //
 // Read-only: every context runs in a transaction that ROLLS BACK. Exit 0 = all pass.
 // ─────────────────────────────────────────────────────────────────────────────
@@ -21,16 +26,16 @@ const A = '019439a6-fb95-f543-c2e0-40d9f9b719fa'; // LRCLA
 const B = '019439a8-7d01-187c-89ff-970d71bdba6c'; // LRCTU
 const C = '019439d4-6e3a-2339-88d1-85b11877ed6a'; // ZONTA (unrelated)
 
-// A0 baseline (single-value policies, pre-0026) — A4 must reproduce these.
-const BASELINE: Record<string, { internal: number; a: number; b: number; c: number }> = {
-  'raw.ft_dispatch_load':         { internal: 22450, a: 129, b: 120, c: 120 },
-  'raw.ft_pallet':                { internal: 205246, a: 1332, b: 2542, c: 872 },
-  'core.dim_grower':              { internal: 156, a: 1, b: 1, c: 1 },
-  'core.fact_settlement_bill':    { internal: 1097, a: 51, b: 51, c: 50 },
-  'core.fact_gp_settlement':      { internal: 1254, a: 49, b: 49, c: 48 },
-  'core.fact_gp_settlement_load': { internal: 17975, a: 127, b: 102, c: 331 },
-};
-const TABLES = Object.keys(BASELINE);
+// Expected counts per table — DERIVED IN-RUN as the table owner (see header). Filled in main().
+const EXPECTED: Record<string, { internal: number; a: number; b: number; c: number }> = {};
+const TABLES = [
+  'raw.ft_dispatch_load',
+  'raw.ft_pallet',
+  'core.dim_grower',
+  'core.fact_settlement_bill',
+  'core.fact_gp_settlement',
+  'core.fact_gp_settlement_load',
+];
 // consignor column for each table (pallet is scoped through its load).
 const CONSIGNOR_EXPR: Record<string, string> = {
   'raw.ft_dispatch_load': 'consignor_id',
@@ -103,6 +108,20 @@ async function main(): Promise<void> {
   const pool = makePool();
   const c = await pool.connect();
   try {
+    // ── A0' — derive the expected counts as the table OWNER (no role switch → RLS off) ──
+    console.log('=== A0  expected counts derived in-run as table owner (proof cannot rot) ===');
+    for (const t of TABLES) {
+      const expr = CONSIGNOR_EXPR[t]!;
+      const r = await c.query(
+        `select count(*) internal,
+                count(*) filter (where ${expr} = $1) a,
+                count(*) filter (where ${expr} = $2) b,
+                count(*) filter (where ${expr} = $3) c
+           from ${t}`, [A, B, C]);
+      const x = r.rows[0]!;
+      EXPECTED[t] = { internal: Number(x.internal), a: Number(x.a), b: Number(x.b), c: Number(x.c) };
+      console.log(`  ${t}: internal=${x.internal} A=${x.a} B=${x.b} C=${x.c}`);
+    }
     // ── A2: current_consignor_ids() return semantics (app_metadata only) ─────────
     console.log('\n=== A2  semantic.current_consignor_ids() returns uuid[] (app_metadata only) ===');
     const arr = await idsUnder(c, JSON.stringify({ app_metadata: { consignor_ids: [A, B] } }));
@@ -152,7 +171,7 @@ async function main(): Promise<void> {
     console.log('\n=== A7  internal token → full unfiltered count on every grower table ===');
     for (const t of TABLES) {
       const n = await count(c, j({ app_metadata: { is_internal: true } }), t);
-      check(`internal ${t} = ${BASELINE[t]!.internal}`, n === BASELINE[t]!.internal, `got ${n}`);
+      check(`internal ${t} = derived ${EXPECTED[t]!.internal}`, n === EXPECTED[t]!.internal, `got ${n}`);
     }
 
     // ── A4: legacy single-consignor tokens reproduce the A0 baseline exactly ─────
@@ -161,8 +180,8 @@ async function main(): Promise<void> {
       const a = await count(c, j({ app_metadata: { consignor_id: A } }), t);
       const b = await count(c, j({ app_metadata: { consignor_id: B } }), t);
       const cc = await count(c, j({ app_metadata: { consignor_id: C } }), t);
-      const bl = BASELINE[t]!;
-      check(`${t} legacy A/B/C = baseline ${bl.a}/${bl.b}/${bl.c}`, a === bl.a && b === bl.b && cc === bl.c, `got ${a}/${b}/${cc}`);
+      const bl = EXPECTED[t]!;
+      check(`${t} legacy A/B/C = derived ${bl.a}/${bl.b}/${bl.c}`, a === bl.a && b === bl.b && cc === bl.c, `got ${a}/${b}/${cc}`);
     }
 
     // ── A5: [A,B] token → rows for A and B ONLY (breakdown); C → 0 ───────────────
@@ -170,7 +189,7 @@ async function main(): Promise<void> {
     const abToken = j({ app_metadata: { consignor_ids: [A, B] } });
     for (const t of TABLES) {
       const bd = await breakdown(c, abToken, t);
-      const bl = BASELINE[t]!;
+      const bl = EXPECTED[t]!;
       const ok = bd.a === bl.a && bd.b === bl.b && bd.cc === 0 && bd.total === bl.a + bl.b;
       check(`${t}: A=${bd.a} B=${bd.b} C=${bd.cc} total=${bd.total}`, ok, `(expect A=${bl.a} B=${bl.b} C=0 total=${bl.a + bl.b})`);
     }

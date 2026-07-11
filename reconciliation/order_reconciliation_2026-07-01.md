@@ -3,7 +3,7 @@
 Date: 2026-07-01 · Project: data_hub (uqzfkhsdyeokwnkpcxui) · Source: FreshTrack read-replica
 Sample: 500 PRICED sell orders (type=S, non-null header total, ≥1 current-version line). Tolerance: ±0.01.
 
-Null integrity (SPEC §9.3): 11328 of 20920 sell orders with lines are entirely
+Null integrity (SPEC §9.3): 11725 of 21590 sell orders with lines are entirely
 UNPRICED (quote/pending) and keep a NULL total_price_value — never coalesced to 0 — faithful to
 the source (only ~47% of replica current-version lines carry total_price_value).
 
