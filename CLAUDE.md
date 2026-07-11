@@ -89,11 +89,17 @@ never redefines one. Full surface + run docs: `mcp/README.md`. Start: `npm run m
   truncated }` (SPEC §5). Metric/dimension names are **registry-validated** against the Cube
   catalog (unknowns rejected). `run_select` = `semantic.*` only, no DDL/DML, single statement, row
   cap + statement timeout.
-- **Deferred, stubbed (not faked):** `list_grower_sales`/settlement → Phase 2 (read-replica
-  blocked). Write/action tools are NOT in this read server — they need the separate audited action
-  surface (human confirmation for irreversible actions).
-- **Proof (runnable):** `npm run mcp:proof` — identity propagation + parity across internal + 2
-  growers + no-claim + forged, both paths (`reports/mcp_proof_<date>.txt`). Secrets via env
+- **Multi-farm identity (closeout 2026-07-11):** the MCP carries the 0026 consignor SET —
+  `app_metadata.consignor_ids[]` (per-element UUID-validated, fail-closed) with scalar fallback;
+  a single-farm claim payload stays byte-identical to pre-0026. **`list_grower_sales` is LIVE**
+  (schedule-grain settlement over `semantic.grower_gp_settlement`, RLS detail funnel, paid_date
+  first-class). Cube reads send **`renewQuery: true`** (low-QPS governed surface: Cube's
+  per-query-shape result cache was observed serving pre-ingest counts; freshness beats cache).
+  Write/action tools are NOT in this read server — they need the separate audited action surface.
+- **Proof (runnable):** `npm run mcp:proof` — SELF-DERIVING (no count/uuid constants; expectations
+  computed in-run from source SQL; fixtures resolved by grower code incl. the real multi-farm
+  grower). Identity propagation + parity across internal + growers + multi-farm UNION + no-claim +
+  forged, all paths (`reports/mcp_proof_<date>.txt`). Run with loaders QUIESCENT. Secrets via env
   (`CUBE_API_SECRET`, `MCP_DB_URL`), never in code.
 
 ## NetSuite settlement (Sprint 5) — RCTIs land in THIS repo (`raw.ns_*` → `core` → `semantic`)
@@ -183,6 +189,34 @@ read-replica** (the first non-GraphQL ingress). Same medallion + `app_metadata` 
   deploy). **Cross-source ties:** GP paid **$140.5M** ≈ NetSuite net **$139.7M**; GP deductions
   **$32.53M** ≈ NetSuite **$32.50M**. Per-grower differences = GP's finer consignor granularity (AG*
   sub-entities + null-consignor aggregates NetSuite rolls into vendor RCTIs) — surfaced, accounting closes.
+
+## Conformed dimensions + cross-source tie + governance (closeout sprint, 2026-07-11)
+- **Dims (0033/0034):** `core.dim_customer` (consignee grain; names via the `raw.ft_entity`
+  **BACKLINK** `e.consignee_id` — NEVER `e.id`; INTERNAL-ONLY: the customer list is commercially
+  sensitive) · `core.dim_product` (from the replica product master + crop/variety/pack_type;
+  SHARED REFERENCE) · `core.dim_date` (**pack-week rule, verified 98.91%: `extra_text_2` = ISO week
+  of `scheduled_pickup_on`, NOT pack_date (~47%)**; SHARED REFERENCE). Load: `npm run ft:ref:load`
+  (replica full-sync) then the `core.refresh_dim_*()` functions. Proof: `npm run dims:verify`.
+- **Settlement tie (0035):** `semantic.recon_settlement_source` — GP ↔ NetSuite at grower × month,
+  FULL OUTER with `match_status` buckets, STRICT internal-only (explicit `is_internal_claim()`
+  gate). Proof: `npm run settle:tie` — every dollar of the cross-source delta partitions into named
+  buckets with $0 unexplained; report committed per run.
+- **RLS posture registry (`npm run rls:posture`):** EVERY raw/core/semantic relation is asserted
+  against an explicit posture class {grower-scoped, internal-only, shared-reference, cube-only,
+  etl-only, semantic-invoker, shared-reference-view, ungranted-view}. **A new relation MUST be
+  added to the registry in scripts/rls_posture.ts or the sweep fails** — that is the point.
+  0036 lore: `dim_gp_charge`/`dim_ns_charge` policies were dead without grants (fixed);
+  `core.dim_shed` is a VIEW whose authenticated grant is load-bearing for grower views.
+- **Retail proof:** `npm run retail:reconcile` (day-grain dedupe, watchlist, parity derived from
+  raw in-run, NULL preservation). Woolworths has landed ZERO rows to date — a scraper gap,
+  surfaced there, not a hub bug.
+- **Proof style contract: hardcoded baselines are FORBIDDEN.** Every proof derives its expected
+  numbers in-run from source SQL (mcp_proof + rls_multi_farm_proof were converted after their
+  hardcoded snapshots rotted on the first freshness load). Never assert an absolute count constant.
+- **⚠ revenue_class persistence:** `ft:gp:core` rebuilds `core.dim_gp_charge` DELETE+INSERT and
+  RESETS `revenue_class` to NULL. Harmless while unmarked — but the post-checkpoint wiring MUST
+  persist Tim's marking through rebuilds (seed table or classifier rules re-applied in the loader),
+  never a one-off UPDATE.
 
 ## Stack
 - TypeScript (ESM, Node ≥ 22 — run `.ts` directly via `--experimental-strip-types`).

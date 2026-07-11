@@ -1,3 +1,68 @@
+# Handoff (2026-07-11): Warehouse closeout — dims, cross-source tie, governance, MCP, freshness
+
+Status: **✅ ALL SEVEN CHUNKS DONE — full proof battery green on fresh data.** Migrations
+`0033`–`0036` applied. Commits `948e06a` (C1) · `280b5cd` (C2) · `47e9f4f` (C3+C4) · `0be690b`
+(C5) · `14c798e` (C6) + docs. **Push manual** (mackaysmarketing PAT per CLAUDE.md).
+
+## What landed
+- **C1 (0033/0034):** `raw.ft_consignee/ft_product/ft_crop/ft_variety/ft_pack_type` (replica
+  full-sync, `ft:ref:load`) → `core.dim_customer` (INTERNAL-ONLY; names via the entity BACKLINK —
+  which also fixed the 0031 bridge bug that left 0/23,544 rows named; now **100%**),
+  `core.dim_product` (159/159 hub products, SHARED REFERENCE), `core.dim_date` (**pack-week =
+  ISO week of `scheduled_pickup_on`, 98.91% verified; pack_date only ~47%**).
+- **C2 (0035):** `semantic.recon_settlement_source` (grower × month, FULL OUTER, match_status
+  buckets, strict internal gate) + `settle:tie`.
+- **C3+C4 (0036):** `retail:reconcile` + `rls:posture` (60-relation posture registry + anomaly
+  scans). Real findings fixed: dim_gp_charge/dim_ns_charge internal-only policies were DEAD (no
+  grant — staff got permission denied; grant added, growers still 0 rows); dim_shed documented as
+  a shared-reference VIEW with a load-bearing grant.
+- **C5:** MCP multi-farm (`consignor_ids[]`, single-farm payloads byte-identical),
+  `list_grower_sales` LIVE, `mcp/cube.ts` sends `renewQuery` (Cube result cache served pre-ingest
+  counts ~45 min after load), `mcp_proof` fully self-deriving.
+- **C6:** incremental loads everywhere — dispatch **+687 loads** (22,450→23,137), pallets →210,436,
+  GP **+78 schedules** (→1,332) / details →25,119 settled, NetSuite **+70 bills** (→1,167, incl. a
+  **40th grower vendor**), orders →21,590, entities →320. Core rebuilt; bridge **25,119 rows** with
+  all guards intact. `rls_multi_farm_proof` converted to in-run derived baselines (the July-1
+  snapshot failed 15/45 on pure drift).
+
+## Evidence (all re-runnable, run 2026-07-11 post-load)
+dims:verify **7/7** · settle:tie **7/7** (cash tie **0.43%**, deductions 0.37%, unexplained
+**$0.00**) · retail:reconcile **10/10** · rls:posture **60/60, 0 anomalies** · ft:bridge:verify
+**6/6** (25,119=25,119; 0 mismatched groups/loads; 0 over-allocated; product_exact 99.02%;
+median variance $0.00) · ft:bridge:rls **30/30** · rls:multifarm **45/45** · mcp:proof **58/58**
+· ft:gp:reconcile PASS (1225/1277 cash within 1%) · ft:gp:rls 14/14 · ft:gp:parity 5/5 ·
+ns:reconcile PASS (0 unmapped) · ns:rls 7/7 · ns:parity **5/5** (1,167=1,167, Δ$0.0000) ·
+ft:order:reconcile 500/500×4 · ft:order:rls 18/18 · ft:dispatch:reconcile PASS · tests **94/94**
+· typecheck clean. Reports committed: settle_tie / retail_reconcile / mcp_proof (2026-07-11).
+
+## Adversarial review + hardening (2026-07-12)
+Four skeptic agents re-derived every chunk's claims with independent SQL. One **broken** finding
+fixed, plus two robustness gaps and the misleading comments they surfaced:
+- **`mcp/runSelect.ts` quoted-schema bypass (FIXED):** `"raw".ft_pallet` slipped past the
+  `\b<schema>\.` scan (RLS still failed closed, but the `semantic.*`-only contract was not
+  enforced). Now blanks string literals, rejects quoted identifiers + dollar-quotes, scans the
+  de-quoted code. Regression tests added (95/95).
+- **`rls:posture` sequence blind spot (FIXED):** relkind 'S' was outside the sweep — added A6
+  scan asserting no sequence is granted to `authenticated` (0 found).
+- **`mcp/identity.ts` dedupe (FIXED):** now lowercases UUIDs before the set dedupe (case-only
+  duplicates collapse; real lowercase inputs unchanged → single-farm payload still byte-identical).
+- **0034 comments corrected:** "1 unnamed" (now 0 after the entity load) and the pack-week
+  residual direction (dominant bucket is +1 ISO week, not −1). Re-applied (comment-only, idempotent).
+- Everything else **held**: bucket partition sound (no double-count; WADDA duplicate-code offsets
+  to $0.01), RLS isolation proven behaviorally on real growers, dim_shed exposes only shed_id+name,
+  retail dedupe hash-identical, customer names 12/12 vs replica, product coverage over a wider
+  universe than the proof checks. Doc-staleness caveats only (98.91%→~98.8% as data grows).
+
+## Notes / follow-ups
+- **⚠ revenue_class persistence:** `ft:gp:core` rebuilds dim_gp_charge and RESETS revenue_class.
+  The post-checkpoint wiring must persist Tim's marking through rebuilds (seed + loader re-apply).
+- **Woolworths retail scraper has landed ZERO rows** — surfaced by retail:reconcile; a
+  price-reporter (separate repo) gap, not a hub bug.
+- Order-reconcile report filename carries an embedded stale date (cosmetic).
+- Still deferred (blocking reasons in SPRINT.md): revenue-class wiring (Tim's CSV), Cube bridge
+  exposure (sign-off gate), remote grower connector (infra/auth), knowledge graph (cross-repo
+  interface), AR/remittance (own sprint — dim_customer prerequisite now built).
+
 # Handoff (2026-07-09): Settlement bridge — order book ↔ grower settlement
 
 Status: **✅ Bridge built + proven; ⏸ STOPPED at the revenue-class checkpoint (by design).**
