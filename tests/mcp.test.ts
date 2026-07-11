@@ -161,6 +161,26 @@ test('run_select guard: accepts a semantic SELECT, rejects everything dangerous'
   );
 });
 
+test('run_select guard: quoted-identifier and dollar-quote schema bypasses are rejected', () => {
+  // The closeout-2026-07-12 finding: a quoted schema slipped past the \b<schema>\. scan.
+  assert.throws(() => guardSelect('select * from "raw".ft_pallet'), ValidationError);
+  assert.throws(() => guardSelect('select p.* from "raw".ft_pallet p, semantic.grower_dispatch_detail s where false'), ValidationError);
+  assert.throws(() => guardSelect('select * from "public".remittances'), ValidationError);
+  assert.throws(() => guardSelect('select * from "core".fact_gp_settlement'), ValidationError);
+  assert.throws(() => guardSelect('select * from "pg_catalog".pg_tables'), ValidationError);
+  // A dead semantic. ref must NOT rescue a forbidden reference.
+  assert.throws(
+    () => guardSelect('select * from "raw".ft_pallet union all select null from semantic.x where false'),
+    ValidationError,
+  );
+  // Dollar-quoted string smuggling.
+  assert.throws(() => guardSelect('select $$ raw.ft_pallet $$ from semantic.x'), ValidationError);
+  assert.throws(() => guardSelect('select $tag$x$tag$ from semantic.x'), ValidationError);
+  // A forbidden schema hidden inside a STRING LITERAL is fine (it is data, not a reference).
+  const ok = guardSelect("select crop from semantic.grower_dispatch_detail where crop = 'raw.ft_pallet'", 5);
+  assert.match(ok.sql, /_hub_mcp_capped limit 6/);
+});
+
 // ── Tool surface registration ───────────────────────────────────────────────────────────────
 test('tools: the full read surface is registered with input schemas', () => {
   for (const name of [

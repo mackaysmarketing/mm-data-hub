@@ -347,7 +347,25 @@ export async function sweep(c: PoolClient): Promise<boolean> {
     // A5: unexpected grantees
     for (const g of grants) if (!ALLOWED_GRANTEES.has(g)) fail(`A5 ${r.rel}: unexpected grantee "${g}" (allowed: postgres, authenticated, cube_readonly)`);
   }
-  log(problems.some((p) => p.startsWith('A')) ? '  anomalies found (listed below)' : '  no anomalies');
+
+  // A6: sequences (relkind 'S') sit OUTSIDE the relation sweep (no RLS, not in the registry), so a
+  // grant on one would be invisible above. They are ETL-owned identity generators — assert none is
+  // reachable by authenticated (a granted sequence leaks nextval/last_value and row-count signal).
+  const seqGrants = (await c.query<{ rel: string; grantee: string; priv: string }>(
+    `select n.nspname || '.' || c.relname as rel, a.grantee::regrole::text as grantee, a.privilege_type as priv
+       from pg_class c
+       join pg_namespace n on n.oid = c.relnamespace
+       cross join lateral aclexplode(coalesce(c.relacl, acldefault('s', c.relowner))) a
+      where c.relkind = 'S' and n.nspname in ('raw', 'core', 'semantic')
+        and a.grantee <> c.relowner`,
+  )).rows;
+  for (const s of seqGrants) {
+    if (s.grantee === 'authenticated')
+      fail(`A6 ${s.rel}: sequence granted ${s.priv} to authenticated (identity sequences must stay ETL/owner-only)`);
+    else if (!ALLOWED_GRANTEES.has(s.grantee))
+      fail(`A6 ${s.rel}: sequence granted ${s.priv} to unexpected grantee "${s.grantee}"`);
+  }
+  log(problems.some((p) => p.startsWith('A')) ? '  anomalies found (listed below)' : `  no anomalies (incl. ${seqGrants.length} sequence grant(s) checked)`);
 
   // ── Summary ─────────────────────────────────────────────────────────────────
   log('\n--- Summary ---');

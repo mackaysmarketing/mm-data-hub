@@ -3,9 +3,10 @@
 --
 -- Sources are the 0033 raw reference tables (raw.ft_consignee/ft_product/ft_crop/ft_variety/
 -- ft_pack_type, loaded by ft:ref:load) + the raw.ft_entity BACKLINK for customer names
--- (entity.consignee_id → consignee.id — verified live 2026-07-11: 134/135 consignees carry a
--- backlink, every backlink has a non-blank org_name; exactly ONE hub-referenced consignee
--- (1 dispatch load) has no backlink → its name stays NULL, surfaced, never dropped).
+-- (entity.consignee_id → consignee.id). Coverage is entity-load-dependent: after a fresh entity
+-- load every consignee carries a backlink with a non-blank org_name (verified 0 unnamed,
+-- 2026-07-12); if a consignee is ever seen before its entity lands, its name stays NULL —
+-- surfaced by dims:verify (unnamed list), never dropped or faked.
 --
 -- Postures (two, chosen by consumer surface — the 0030 rationale):
 --   • dim_customer = INTERNAL-ONLY. The customer LIST is commercially sensitive (who Mackays
@@ -162,13 +163,16 @@ create policy authenticated_read_reference on core.dim_product
 -- PACK-WEEK RULE (verified live 2026-07-11, read-only probe against raw.ft_dispatch_load):
 --   pack_week_code = 'Y' || to_char(d,'IY') || 'W' || to_char(d,'IW')   — the ISO year-week code.
 -- Which DATE carries a load's code: extra_text_2 equals the ISO week code of the load's
--- scheduled_pickup_on (UTC date) on 22,120 / 22,363 well-formed codes = 98.91%. Candidates
--- anchored on pack_date top out at 47.4% (ISO) / 48.0% (Sunday-start) — the code tracks the
--- SCHEDULED-PICKUP week, NOT the pack-date week (fruit is often packed days before pickup).
--- The 1.09% residual: offsets of ±1–2 weeks consistent with pickup reschedules after the code
--- was assigned (largest buckets −1wk×40, −2wk×7), plus 8 malformed codes — documented honestly,
--- not hidden. So: joining a load's extra_text_2 to dim_date.pack_week_code yields the load's
--- scheduled-pickup week; pack_date-based joins will legitimately disagree ~half the time.
+-- scheduled_pickup_on (UTC date) on ~98.8–98.9% of well-formed codes (22,120/22,363 = 98.91% at
+-- first measure, 2026-07-11; re-measured live each run by dims:verify against a ≥98.5% floor).
+-- Candidates anchored on pack_date top out at ~47.4% — the code tracks the SCHEDULED-PICKUP week,
+-- NOT the pack-date week (fruit is often packed days before pickup). The ~1% residual is
+-- pickup RESCHEDULES after the code was assigned: the dominant mismatch bucket is +1 ISO week
+-- (the pickup slipped a week later than the stamped code), with smaller −1/−2 week buckets; plus
+-- a handful of malformed codes (mostly the literal placeholder 'YW' on loads with a NULL
+-- scheduled_pickup_on, which never enter the match denominator). Documented honestly, not hidden.
+-- So: joining a load's extra_text_2 to dim_date.pack_week_code yields the load's scheduled-pickup
+-- week; pack_date-based joins will legitimately disagree ~half the time.
 create table if not exists core.dim_date (
   date            date primary key,
   iso_year        integer not null,

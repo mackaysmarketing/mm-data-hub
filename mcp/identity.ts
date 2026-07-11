@@ -105,9 +105,13 @@ export function identityFromSecurityContext(
 
   const consignorIds: string[] = [];
   const add = (raw: unknown): void => {
-    if (typeof raw === 'string' && UUID_RE.test(raw) && !consignorIds.includes(raw)) {
-      consignorIds.push(raw);
-    }
+    // Normalise to lowercase before the dedupe: UUID_RE is case-insensitive, and Postgres/Cube
+    // compare uuids case-insensitively, so 'ABCD…' and 'abcd…' are ONE grower — dedupe must agree
+    // (a case-only duplicate would otherwise survive as two set elements; harmless to scope, but
+    // the set would not be truly de-duplicated).
+    if (typeof raw !== 'string' || !UUID_RE.test(raw)) return;
+    const v = raw.toLowerCase();
+    if (!consignorIds.includes(v)) consignorIds.push(v);
   };
   if (Array.isArray(am.consignor_ids)) am.consignor_ids.forEach(add); // multi-farm (0026)
   add(am.consignor_id); // legacy scalar folds into the set (backward-compatible)
