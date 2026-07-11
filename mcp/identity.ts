@@ -2,8 +2,11 @@
 // Hub MCP — CALLER IDENTITY (the security boundary). SPEC §5/§7, CLAUDE.md claim contract.
 // ─────────────────────────────────────────────────────────────────────────────
 // Identity is read ONLY from the server-controlled `app_metadata` namespace — IDENTICAL to
-// DB migration 0010 and cube.js. A grower can only edit user_metadata / top-level claims, so a
-// FORGED top-level `is_internal` / `consignor_id` is ignored here → fail closed (no scope).
+// DB migrations 0010/0026 and cube.js. A grower can only edit user_metadata / top-level claims, so
+// a FORGED top-level `is_internal` / `consignor_id` / `consignor_ids` is ignored here → fail closed
+// (no scope). Grower scope is a consignor SET (0026 multi-farm): `app_metadata.consignor_ids[]`
+// unioned with the legacy scalar `app_metadata.consignor_id`, propagated on BOTH paths (Cube JWT +
+// Postgres request.jwt.claims).
 //
 // Identity enters the MCP from a TRUSTED channel (a host-signed token), never as a tool
 // argument the model controls. No filter / group_by / run_select input can assert or widen it.
@@ -16,11 +19,17 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 export type Tier = 'internal' | 'grower-admin' | 'grower-user' | 'none';
 
 export interface CallerIdentity {
-  /** Grower key = consignor_id (uuid) or null. */
+  /**
+   * The grower's consignor SET (migration 0026 multi-farm contract): the de-duplicated,
+   * validated union of app_metadata.consignor_ids[] and the legacy scalar app_metadata.consignor_id
+   * — the SAME fold as semantic.current_consignor_ids() and cube.js readClaims. Empty = no scope.
+   */
+  readonly consignorIds: readonly string[];
+  /** Legacy scalar view of the set (element 1) or null — kept for compat; never widens scope. */
   readonly consignorId: string | null;
   /** Internal / service context → unscoped (sees all consignors). */
   readonly isInternal: boolean;
-  /** Capability gate for the deferred sales surface (SPEC §7). */
+  /** Capability gate for the grower sales surface (SPEC §7; enforced with the grower tool profile). */
   readonly canViewSales: boolean;
   readonly tier: Tier;
   /** Provenance, for logging/output only — never trusted for authz. */
@@ -29,6 +38,7 @@ export interface CallerIdentity {
 
 /** The fail-closed identity: no scope at all. Every data tool returns 0 rows / refuses. */
 export const NONE_IDENTITY: CallerIdentity = {
+  consignorIds: [],
   consignorId: null,
   isInternal: false,
   canViewSales: false,
@@ -36,16 +46,23 @@ export const NONE_IDENTITY: CallerIdentity = {
   source: 'none',
 };
 
-/** Has this caller ANY legitimate scope? Neither internal nor a valid consignor → false. */
+/** Has this caller ANY legitimate scope? Neither internal nor a valid consignor set → false. */
 export function hasScope(id: CallerIdentity): boolean {
-  return id.isInternal || id.consignorId !== null;
+  return id.isInternal || id.consignorIds.length > 0;
 }
 
-/** The `app_metadata` object to carry into Cube tokens / Postgres request.jwt.claims. */
+/**
+ * The `app_metadata` object to carry into Cube tokens / Postgres request.jwt.claims.
+ * Single-farm identities emit the legacy scalar `consignor_id` — BYTE-IDENTICAL to the pre-0026
+ * payload, so existing single-farm behavior is unchanged. Multi-farm identities emit
+ * `consignor_ids` (the array), which both semantic.current_consignor_ids() (migration 0026) and
+ * cube.js readClaims consume as the scope SET on the detail and metric paths respectively.
+ */
 export function appMetadata(id: CallerIdentity): Record<string, unknown> {
   const am: Record<string, unknown> = {};
   if (id.isInternal) am.is_internal = true;
-  if (id.consignorId) am.consignor_id = id.consignorId;
+  if (id.consignorIds.length === 1) am.consignor_id = id.consignorIds[0];
+  else if (id.consignorIds.length > 1) am.consignor_ids = [...id.consignorIds];
   if (id.canViewSales) am.can_view_sales = true;
   return am;
 }
@@ -58,6 +75,9 @@ export function claimsJson(id: CallerIdentity): string {
 /** Human-readable scope description for `filters_applied` (never a security decision). */
 export function scopeLabel(id: CallerIdentity): string {
   if (id.isInternal) return 'internal (unscoped — all consignors)';
+  if (id.consignorIds.length > 1) {
+    return `grower-scoped to consignor_ids={${id.consignorIds.join(',')}} (multi-farm, ${id.consignorIds.length} farms)`;
+  }
   if (id.consignorId) return `grower-scoped to consignor_id=${id.consignorId}`;
   return 'no scope (fail closed — 0 rows)';
 }
@@ -66,6 +86,12 @@ export function scopeLabel(id: CallerIdentity): string {
  * Build a CallerIdentity from a raw security context, reading app_metadata ONLY.
  * This is the single funnel: tokens, tests, and the proof all go through here, so the
  * forged-top-level-claim rejection is guaranteed everywhere.
+ *
+ * Consignor SET semantics mirror migration 0026 / cube.js readClaims EXACTLY:
+ * `consignor_ids` must be an array (any other type is ignored, fail closed for it); each element
+ * must be a valid uuid (malformed elements are skipped, never trusted); the legacy scalar
+ * `consignor_id` folds into the de-duplicated set. An empty resulting set (and not internal)
+ * → NONE_IDENTITY (fail closed).
  */
 export function identityFromSecurityContext(
   sc: Record<string, unknown> | null | undefined,
@@ -77,14 +103,19 @@ export function identityFromSecurityContext(
     | undefined;
   if (!am || typeof am !== 'object') return NONE_IDENTITY;
 
-  const rawConsignor = am.consignor_id;
-  const consignorId =
-    typeof rawConsignor === 'string' && UUID_RE.test(rawConsignor) ? rawConsignor : null;
+  const consignorIds: string[] = [];
+  const add = (raw: unknown): void => {
+    if (typeof raw === 'string' && UUID_RE.test(raw) && !consignorIds.includes(raw)) {
+      consignorIds.push(raw);
+    }
+  };
+  if (Array.isArray(am.consignor_ids)) am.consignor_ids.forEach(add); // multi-farm (0026)
+  add(am.consignor_id); // legacy scalar folds into the set (backward-compatible)
 
   const isInternal = truthy(am.is_internal);
   const canViewSales = truthy(am.can_view_sales);
 
-  if (!isInternal && consignorId === null) return NONE_IDENTITY;
+  if (!isInternal && consignorIds.length === 0) return NONE_IDENTITY;
 
   const tier: Tier = isInternal
     ? 'internal'
@@ -92,7 +123,7 @@ export function identityFromSecurityContext(
       ? 'grower-admin'
       : 'grower-user';
 
-  return { consignorId, isInternal, canViewSales, tier, source };
+  return { consignorIds, consignorId: consignorIds[0] ?? null, isInternal, canViewSales, tier, source };
 }
 
 function truthy(v: unknown): boolean {

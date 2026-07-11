@@ -18,12 +18,48 @@ import { TOOLS, TOOLS_BY_NAME, type ToolDeps } from '../mcp/tools.ts';
 import type { CubeMetaCube, CubeQuery } from '../mcp/cube.ts';
 
 const A = '0191e996-93b7-fcd1-170e-87c6aa517087';
+const B = '0191f981-c9dc-4203-4f1b-3e9c5f5758d3';
 
 // ── Identity: app_metadata-only contract, forged top-level rejected (fail closed) ────────────
 test('identity: forged TOP-LEVEL claims are ignored → no scope', () => {
   const id = identityFromSecurityContext({ is_internal: true, consignor_id: A });
   assert.equal(id, NONE_IDENTITY);
   assert.equal(hasScope(id), false);
+  // The multi-farm array claim is app_metadata-only too (0026 contract).
+  assert.equal(identityFromSecurityContext({ consignor_ids: [A, B] }), NONE_IDENTITY);
+});
+
+// ── Identity: multi-farm consignor SET (migration 0026 contract) ─────────────────────────────
+test('identity: consignor_ids[] → SET; scalar folds in; malformed skipped; single-farm byte-identical', () => {
+  const multi = identityFromSecurityContext({ app_metadata: { consignor_ids: [A, B] } });
+  assert.deepEqual([...multi.consignorIds], [A, B]);
+  assert.equal(multi.consignorId, A); // legacy scalar view = element 1
+  assert.equal(hasScope(multi), true);
+  assert.deepEqual(appMetadata(multi), { consignor_ids: [A, B] });
+
+  // array + legacy scalar → de-duplicated union (same fold as 0026 / cube.js readClaims)
+  const union = identityFromSecurityContext({ app_metadata: { consignor_ids: [A, B], consignor_id: A } });
+  assert.deepEqual([...union.consignorIds].sort(), [A, B].sort());
+
+  // malformed elements are skipped (fail closed for them), duplicates collapse
+  const skipped = identityFromSecurityContext({ app_metadata: { consignor_ids: ['not-a-uuid', A, A] } });
+  assert.deepEqual([...skipped.consignorIds], [A]);
+  // a single-element set emits the LEGACY scalar claim — byte-identical to pre-0026 payloads
+  assert.deepEqual(appMetadata(skipped), { consignor_id: A });
+
+  // empty array / non-array / all-malformed → fail closed
+  assert.equal(identityFromSecurityContext({ app_metadata: { consignor_ids: [] } }), NONE_IDENTITY);
+  assert.equal(identityFromSecurityContext({ app_metadata: { consignor_ids: 'not-an-array' } }), NONE_IDENTITY);
+  assert.equal(identityFromSecurityContext({ app_metadata: { consignor_ids: ['nope'] } }), NONE_IDENTITY);
+});
+
+test('identity: multi-farm claims round-trip the caller token and reach claimsJson', () => {
+  const secret = 'test-secret';
+  const tok = signCallerToken({ app_metadata: { consignor_ids: [A, B] } }, secret);
+  const id = verifyCallerToken(tok, secret);
+  assert.deepEqual([...id.consignorIds], [A, B]);
+  // the detail path presents the SAME set under request.jwt.claims.app_metadata
+  assert.deepEqual(JSON.parse(claimsJson(id)), { app_metadata: { consignor_ids: [A, B] } });
 });
 
 test('identity: app_metadata grower → scoped; internal → internal; malformed uuid → none', () => {
@@ -129,7 +165,7 @@ test('run_select guard: accepts a semantic SELECT, rejects everything dangerous'
 test('tools: the full read surface is registered with input schemas', () => {
   for (const name of [
     'get_catalog', 'list_metrics', 'get_definition', 'list_dimension_values',
-    'query_metric', 'list_grower_dispatches', 'resolve_entity', 'run_select',
+    'query_metric', 'list_grower_dispatches', 'list_grower_sales', 'resolve_entity', 'run_select',
   ]) {
     const t = TOOLS_BY_NAME.get(name);
     assert.ok(t, `${name} registered`);
@@ -141,6 +177,8 @@ test('tools: the full read surface is registered with input schemas', () => {
 
 // ── Handlers with injected fakes (no live deps): validation + governed output ─────────────────
 let lastQuery: CubeQuery | null = null;
+let lastSql: string | null = null;
+let lastParams: unknown[] | undefined;
 function fakeDeps(loadRows: Array<Record<string, string | number | null>>): ToolDeps {
   return {
     cube: {
@@ -152,7 +190,11 @@ function fakeDeps(loadRows: Array<Record<string, string | number | null>>): Tool
     },
     db: {
       query: async (_id, fn) =>
-        fn(async (_sql: string) => ({ rows: [{ n: 1 }], fields: [{ name: 'n' }] }) as never),
+        fn(async (sql: string, params?: unknown[]) => {
+          lastSql = sql;
+          lastParams = params;
+          return { rows: [{ n: 1 }], fields: [{ name: 'n' }] } as never;
+        }),
       end: async () => {},
     },
     catalog: async () => CAT,
@@ -208,10 +250,38 @@ test('run_select handler: surfaces the guard rejection as ValidationError', asyn
   );
 });
 
-test('list_grower_sales: deferred surface is guarded, not faked', async () => {
+test('list_grower_sales: wired over semantic.grower_gp_settlement with validated filters', async () => {
   const deps = fakeDeps([]);
-  await assert.rejects(
-    () => TOOLS_BY_NAME.get('list_grower_sales')!.handler({}, NONE_IDENTITY, deps),
-    /Phase 2/,
+  lastSql = null;
+  lastParams = undefined;
+  const id = identityFromSecurityContext({ app_metadata: { consignor_id: A } });
+  const res = await TOOLS_BY_NAME.get('list_grower_sales')!.handler(
+    { time_range: { from: '2026-01-01', to: '2026-06-30' }, paid: true, limit: 10 },
+    id,
+    deps,
   );
+  assert.ok(isReadResult(res));
+  assert.match(lastSql!, /from semantic\.grower_gp_settlement/);
+  assert.match(lastSql!, /payable_on >= \$1::date/);
+  assert.match(lastSql!, /payable_on <= \$2::date/);
+  assert.match(lastSql!, /paid_date is not null/); // paid flag = pure null test, never zero-dated
+  assert.match(lastSql!, /limit 11/); // cap + 1 to detect truncation
+  assert.deepEqual(lastParams, ['2026-01-01', '2026-06-30']);
+  const fa = res.filters_applied as Record<string, unknown>;
+  assert.equal(fa.paid, true);
+  assert.match(String(fa.rls), /grower-scoped/);
+  assert.ok(Array.isArray(fa.baked_in));
+});
+
+test('list_grower_sales: paid=false filters to null paid_date; grower arg only narrows', async () => {
+  const deps = fakeDeps([]);
+  lastSql = null;
+  await TOOLS_BY_NAME.get('list_grower_sales')!.handler(
+    { paid: false, grower: B },
+    identityFromSecurityContext({ app_metadata: { consignor_id: A } }),
+    deps,
+  );
+  assert.match(lastSql!, /paid_date is null/);
+  assert.match(lastSql!, /grower_key = \$1::uuid/); // a narrowing filter — RLS still bounds the universe
+  assert.deepEqual(lastParams, [B]);
 });

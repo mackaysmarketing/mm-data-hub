@@ -54,7 +54,11 @@ export interface CubeMetaCube {
   dimensions: CubeMetaMember[];
 }
 
-/** POST /load, retrying while Cube warms its cache ("Continue wait"). */
+/** POST /load, retrying while Cube warms its cache ("Continue wait").
+ *  renewQuery: the MCP is a low-QPS governed surface — a stale cached answer is worse than the
+ *  extra Cube work, and Cube's per-query-shape result cache refreshes lazily (observed serving
+ *  pre-load counts for some token shapes ~45 min after an ingest while others were fresh). Forcing
+ *  renewal makes every governed read, and the mcp:proof parity checks, deterministic vs the hub. */
 async function load(query: CubeQuery, id: CallerIdentity): Promise<CubeRow[]> {
   const token = signCubeToken(id);
   const url = `${config.cubeApiUrl()}/load`;
@@ -62,7 +66,7 @@ async function load(query: CubeQuery, id: CallerIdentity): Promise<CubeRow[]> {
     const res = await fetch(url, {
       method: 'POST',
       headers: { Authorization: token, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ query }),
+      body: JSON.stringify({ query: { ...query, renewQuery: true } }),
     });
     const text = await res.text();
     let body: { data?: CubeRow[]; error?: string };

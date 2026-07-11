@@ -1,0 +1,81 @@
+=== Hub MCP identity-propagation + parity proof (self-deriving) ===
+
+fixtures (resolved live from core.dim_grower):
+  MMLAR = 0191e996-93b7-fcd1-170e-87c6aa517087
+  MMTRU = 0191f981-c9dc-4203-4f1b-3e9c5f5758d3
+  LRCLA = 019439a6-fb95-f543-c2e0-40d9f9b719fa
+  LRCTU = 019439a8-7d01-187c-89ff-970d71bdba6c
+derived expectations (source SQL, this run):
+  cube pallet_count: internal=46015 MMLAR=15482 MMTRU=9602 LRCLA=364 LRCTU=478
+  detail rows:       internal=48073 MMLAR=15713 MMTRU=9602 LRCLA=364 LRCTU=478
+  gp schedules:      internal=1332 MMLAR=0 MMTRU=0 LRCLA=52 LRCTU=52
+
+PASS  identity: legacy scalar token → byte-identical app_metadata {consignor_id} — {"consignor_id":"0191e996-93b7-fcd1-170e-87c6aa517087"}
+PASS  identity: multi-farm token → app_metadata {consignor_ids:[M1,M2]} — {"consignor_ids":["019439a6-fb95-f543-c2e0-40d9f9b719fa","019439a8-7d01-187c-89ff-970d71bdba6c"]}
+PASS  identity: single-element consignor_ids ≡ legacy scalar (same claims) — {"consignor_id":"019439a6-fb95-f543-c2e0-40d9f9b719fa"}
+PASS  identity: forged TOP-LEVEL consignor_ids[] → no scope — consignorIds=[]
+
+query_metric pallet_count — internal=46015 A=15482 B=9602 none=0 forged=0
+
+PASS  metric: internal parity (=derived 46015) — pallet_count=46015
+PASS  metric: grower A scoped total (=derived 15482) — A=15482
+PASS  metric: grower B scoped total (=derived 9602) — B=9602
+PASS  metric: no-claim fails closed (=0) — none=0
+PASS  metric: forged top-level claim fails closed (=0) — forged=0
+PASS  metric: A + B ≤ internal — 15482+9602 ≤ 46015
+PASS  metric: A == internal-filtered-to-A — A=15482 vs internal|A=15482
+PASS  metric: A cannot filter into B (=0) — A→B=0
+PASS  metric: A group_by grower_key = {A} only — keys=["0191e996-93b7-fcd1-170e-87c6aa517087"]
+PASS  multi precondition: both farms have dispatch rows — LRCLA=364 LRCTU=478
+PASS  metric: [M1,M2] token = UNION of both farms (=derived 842) — multi=842
+PASS  metric: [M1] token still single-farm (=derived 364) — single=364
+PASS  metric: legacy scalar M1 token == [M1] token (unchanged behavior) — legacy=364 array=364
+PASS  metric: [M1,M2] group_by grower_key = BOTH farms, nothing else — keys=["019439a8-7d01-187c-89ff-970d71bdba6c","019439a6-fb95-f543-c2e0-40d9f9b719fa"]
+PASS  metric: forged top-level consignor_ids fails closed (=0) — forgedMulti=0
+
+detail count(*) — internal=48073 A=15713 B=9602 none=0 forged=0
+
+PASS  detail: internal sees all (=derived 48073) — internal=48073
+PASS  detail: grower A scoped (=derived 15713) — A=15713
+PASS  detail: grower B scoped (=derived 9602) — B=9602
+PASS  detail: no-claim fails closed (=0) — none=0
+PASS  detail: forged top-level fails closed (=0) — forged=0
+PASS  detail: [M1,M2] token = UNION of both farms (=derived 842) — multi=842
+PASS  detail: [M1] token still single-farm (=derived 364) — single=364
+PASS  detail: forged top-level consignor_ids fails closed (=0) — forgedMulti=0
+PASS  list: A sees only its own grower_key — keys=["0191e996-93b7-fcd1-170e-87c6aa517087"]
+PASS  list: internal sees multiple growers — 6 distinct grower_keys in page
+PASS  list: no-claim returns 0 rows — rows=0
+PASS  list: A cannot widen via grower=B (=0) — rows=0
+
+sales count(*) — internal=1332 LRCLA=52 LRCTU=52 MMLAR=0 none=0 forged=0
+
+PASS  sales: internal sees all schedules (=derived 1332) — internal=1332
+PASS  sales precondition: both sales growers have schedules — LRCLA=52 LRCTU=52
+PASS  sales: grower LRCLA scoped (=derived 52) — LRCLA=52
+PASS  sales: grower LRCTU scoped (=derived 52) — LRCTU=52
+PASS  sales: grower MMLAR scoped (=derived 0) — MMLAR=0
+PASS  sales: no-claim fails closed (=0) — none=0
+PASS  sales: forged top-level fails closed (=0) — forged=0
+PASS  sales list: LRCLA sees only its own grower_key — keys=["019439a6-fb95-f543-c2e0-40d9f9b719fa"]
+PASS  sales list: internal sees multiple growers — 30 distinct grower_keys in page
+PASS  sales list: no-claim returns 0 rows — rows=0
+PASS  sales list: forged top-level returns 0 rows — rows=0
+PASS  sales list: LRCLA cannot widen via grower=LRCTU (=0) — rows=0
+PASS  sales list: paid=true rows all carry paid_date — 52 paid rows
+PASS  sales list: paid=false rows all have null paid_date — 0 unpaid rows
+PASS  sales list: paid + unpaid partition the grower total — 52+0=52
+PASS  sales: [M1,M2] token = UNION of both farms (=derived 104) — multi=104
+PASS  sales: [M1] token still single-farm (=derived 52) — single=52
+PASS  sales list: [M1,M2] token sees BOTH farms, nothing else — keys=["019439a6-fb95-f543-c2e0-40d9f9b719fa","019439a8-7d01-187c-89ff-970d71bdba6c"]
+PASS  sales: forged top-level consignor_ids fails closed (=0) — forgedMulti=0
+PASS  output shape on every read — columns/rows/metric_definition/filters_applied/row_count/truncated
+PASS  output carries baked-in filters + RLS scope — filters_applied.rls="grower-scoped to consignor_id=0191e996-93b7-fcd1-170e-87c6aa517087"
+PASS  sales output carries baked-in filters + RLS scope + metric definition — filters_applied.rls="grower-scoped to consignor_id=019439a6-fb95-f543-c2e0-40d9f9b719fa"
+PASS  unknown metric rejected — Unknown metric 'bogus_metric'. Valid metrics: load_count, pallet_count, net_weig
+PASS  unknown dimension rejected — Unknown dimension 'not_a_dim'. Valid dimensions: grower_key, consignee_key, disp
+PASS  run_select rejects non-semantic schema — run_select rejected: only the “semantic.” schema may be referenced (found “raw.”
+PASS  run_select rejects DML — run_select allows only SELECT / WITH…SELECT queries
+PASS  run_select rejects multiple statements — run_select allows a single statement only (no “;”-separated statements)
+
+=== 58/58 checks passed ===

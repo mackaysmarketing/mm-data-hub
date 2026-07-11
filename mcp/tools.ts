@@ -1,8 +1,8 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // Hub MCP — the READ tool surface (SPEC §5). Pure handlers: (args, identity, deps) → ReadResult.
 // Identity is injected, never an argument. Metrics are consumed from the Cube catalog, never
-// redefined. Every handler returns the governed output shape. Deferred surfaces are stubbed
-// with an explicit guard (UnavailableError), never faked.
+// redefined. Every handler returns the governed output shape. Unavailable surfaces are guarded
+// with an explicit UnavailableError, never faked.
 // ─────────────────────────────────────────────────────────────────────────────
 import { LIMITS, BAKED_IN_FILTERS } from './config.ts';
 import { ValidationError, UnavailableError } from './errors.ts';
@@ -93,7 +93,10 @@ const listMetrics: ToolHandler = async (args, id, deps) => {
   const domain = args.domain;
   if (domain !== undefined && domain !== 'dispatch') {
     if (domain === 'sales') {
-      throw new UnavailableError('Sales/settlement metrics are unavailable until Phase 2 (GP data not landed).');
+      throw new UnavailableError(
+        'Sales/settlement METRICS are not exposed through this catalog (it consumes the Cube `dispatch` view only). ' +
+          'For grower settlement detail use the list_grower_sales tool (semantic.grower_gp_settlement, RLS-scoped).',
+      );
     }
     throw new ValidationError(`Unknown domain '${String(domain)}'. Available: dispatch`);
   }
@@ -362,12 +365,71 @@ const runSelect: ToolHandler = async (args, id, deps) => {
   });
 };
 
-// ── Deferred surfaces (stubbed, NOT faked) ───────────────────────────────────
-const listGrowerSales: ToolHandler = async () => {
-  throw new UnavailableError(
-    'list_grower_sales is unavailable until Phase 2: GP/settlement data is not landed (FreshTrack ' +
-      'read-replica credentials are blocked — readonlyDatabaseCredentials returns null). See SPRINT.md › Out of Scope.',
-  );
+// ── list_grower_sales (semantic.grower_gp_settlement, Postgres RLS) ──────────
+// Grower settlement at SCHEDULE grain — the SAME detail-path funnel as list_grower_dispatches:
+// hub_mcp role → SET ROLE authenticated + the caller's app_metadata claims → Postgres RLS
+// (0020/0026, anchored on the SCHEDULE consignor) scopes every row; read-only rollback.
+const SALES_COLUMNS = [
+  'payable_on', 'schedule_no', 'week_no', 'date_from', 'date_to',
+  'gross_sales', 'total_deductions', 'gst_total', 'net_settlement',
+  'paid_amount', 'paid_date', 'paid_status',
+  'deduction_freight', 'deduction_warehouse', 'deduction_market',
+  'deduction_larapinta', 'deduction_misc', 'deduction_other',
+  'recon_diff', 'schedule_id', 'grower_key', 'grower_code', 'grower_name',
+];
+
+const listGrowerSales: ToolHandler = async (args, id, deps) => {
+  const cap = capOf(args.limit);
+  const where: string[] = [];
+  const params: unknown[] = [];
+  const add = (clause: string, value: unknown): void => {
+    params.push(value);
+    where.push(clause.replace('$$', `$${params.length}`));
+  };
+
+  // `grower` only NARROWS (RLS already prevents widening past the caller's consignor set).
+  if (typeof args.grower === 'string' && args.grower.trim() !== '') add('grower_key = $$::uuid', args.grower.trim());
+  const tr = args.time_range as { from?: string; to?: string } | undefined;
+  if (tr?.from) add('payable_on >= $$::date', tr.from);
+  if (tr?.to) add('payable_on <= $$::date', tr.to);
+  // paid flag: paid_date is FIRST-CLASS — null means unpaid (never zero-dated), so the flag is a
+  // pure null test, no date coalescing.
+  if (typeof args.paid === 'boolean') where.push(args.paid ? 'paid_date is not null' : 'paid_date is null');
+
+  const whereSql = where.length ? `where ${where.join(' and ')}` : '';
+  const sql = `
+    select ${SALES_COLUMNS.join(', ')}
+    from semantic.grower_gp_settlement
+    ${whereSql}
+    order by payable_on desc nulls last, schedule_no
+    limit ${cap + 1}`;
+
+  const result = await deps.db.query(id, (run) => run(sql, params));
+  const rows = result.rows as Row[];
+  return buildResult({
+    rows,
+    cap,
+    columns: SALES_COLUMNS,
+    metricDefinition: {
+      grain: 'schedule (GP settlement)',
+      source: 'semantic.grower_gp_settlement',
+      note:
+        'net_settlement = gross_sales + total_deductions + gst_total (deduction columns are SIGNED). ' +
+        'paid_date is first-class: null = unpaid, flagged, never zero-dated. RLS anchors on the SCHEDULE ' +
+        'consignor (0020/0026) — never the gp_detail/original-load consignor.',
+    },
+    filtersApplied: {
+      rls: scopeLabel(id),
+      baked_in: [
+        "settled deduction scope: charge_applied.gp_schedule_id IS NOT NULL (unsettled charges excluded)",
+        'deductions from the charge_applied ledger (FR/WH/MD/LA/MI taxonomy), never gp_detail.extra_*',
+      ],
+      grower: args.grower ?? null,
+      time_range: tr ?? null,
+      paid: typeof args.paid === 'boolean' ? args.paid : null,
+      limit: cap,
+    },
+  });
 };
 
 // ── Tool registry ────────────────────────────────────────────────────────────
@@ -480,11 +542,17 @@ export const TOOLS: ToolDef[] = [
   },
   {
     name: 'list_grower_sales',
-    description: '[DEFERRED — Phase 2] Grower sales/settlement detail. Unavailable until GP data is landed (read-replica blocked).',
+    description:
+      'Grower settlement at schedule grain from semantic.grower_gp_settlement (Postgres RLS): gross, deductions by category, GST, net, paid_date (null = unpaid). Optional grower, time_range{from,to} on payable_on, paid (true/false), limit. Caller scope cannot be widened.',
     inputSchema: {
       type: 'object',
-      properties: { grower: STR, time_range: { type: 'object' }, customer: STR, product: STR },
-      additionalProperties: true,
+      properties: {
+        grower: STR,
+        time_range: { type: 'object', properties: { from: STR, to: STR }, additionalProperties: false },
+        paid: { type: 'boolean' },
+        limit: { type: 'number' },
+      },
+      additionalProperties: false,
     },
     handler: listGrowerSales,
   },
