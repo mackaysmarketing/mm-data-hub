@@ -248,6 +248,35 @@ commercially sensitive; no grower RLS). Two sources land the same money: FreshTr
   paid==Σ applied CustPymt, all derived in-run) · `npm run remit:reconcile` (checksum + recon buckets +
   2.5% discount; report committed) · `npm run ar:rls` (internal-only fail-closed, 2 facts + 3 views).
 
+## Retail scan — Coles weekly sell-through (scan sprint, 2026-07-12)
+The DEMAND signal (SPEC §1's "retail scan"): actual units/kg/dollars sold through Coles checkouts,
+weekly, by geography × banana segment × channel — beside the shelf-price domain (`raw.retail_prices`).
+Source = the Circana "Weekly Sales (Scan)_SUP" CSV Tim downloads from Coles (manual drop for now).
+INTERNAL-ONLY exposure; category-level (NO EAN/SKU).
+- **Parser `src/lib/retail_scan_coles.ts`** — PURE, header signature pinned exactly (98 cols, 19
+  measures × 5 variants; casing quirks pinned); ANY drift throws (the loader run fails loudly —
+  update MEASURE_GROUPS in one place). 3 variants landed per measure: current / `_ya` /
+  `_pct_2ya` (vs-YA deltas are pure derivations, discarded) = **`SCAN_MEASURE_COLUMNS` (57) — the
+  single source of truth shared by parser, loader spec, and drift-guard proof**.
+- **Product is a HIERARCHY PATH `<child>-<parent>`** (split on FIRST '-'): own-brand export → child
+  = segment, parent = BANANAS; **manufacturer-split export → child = SUPPLIER, parent = segment**
+  (market share by supplier: FRESHMAX, PERFECTION FRESH, ROCK RIDGE, PRIVATE LABEL, OTHER MFRS…).
+  Core conforms to segment (ALL/REGULAR/PRE_PACK/LADY_FINGER/OTHER) × supplier (NULL = no split);
+  unknowns land verbatim, surfaced. Unique grain guard is NULLS NOT DISTINCT.
+- **Landing (0042):** `raw.retail_scan`, natural key retailer|geography|product|time_label|causal;
+  weekly re-drops of the rolling 52-week window UPSERT — loader (`scan:load`) sorts files
+  **oldest-first by mtime so the newest export's revisions win**. `Latest N W/E` snapshot rows stay
+  raw-only. **The channel checksum (in_store + online == TOTAL on units/dollars/volume) is enforced
+  pre-write**; null legs = incomplete (surfaced, skipped — data absence ≠ additivity violation).
+- **Core (0043, `scan:core`):** `core.fact_retail_scan` weekly grain (week_ending parsed DD-MM-YY →
+  20yy; geography AU/NSW+ACT/QLD/SA+NT/TAS/VIC/WA). **Semantic (0044):** `semantic.retail_scan`
+  joins `core.dim_date` → pack_week_code (scan weeks ↔ pack weeks), promo share + YoY derived
+  null-safe. Both internal-only (0040 posture).
+- **Proofs:** `npm run scan:reconcile` — column drift-guard vs SCAN_MEASURE_COLUMNS, raw↔fact
+  parity, channel checksum 0-mismatch, conformance, NULL preservation, internal-only RLS behavioral.
+- **Deferred:** Woolworths scan (needs their export; parser per-retailer pluggable), auto-ingestion
+  channel, SKU-level scan, Cube exposure.
+
 ## Stack
 - TypeScript (ESM, Node ≥ 22 — run `.ts` directly via `--experimental-strip-types`).
 - Supabase Postgres 17 (`data_hub`). Loaders write via `pg` (direct), never PostgREST.

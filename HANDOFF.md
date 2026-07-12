@@ -1,3 +1,27 @@
+# Handoff (2026-07-12b): Retail scan — Coles weekly sell-through (Circana)
+
+Status: **✅ built + proven from the 3 real exports; adversarial verify in flight at handoff.**
+Migrations `0042`–`0044` applied; commit `02672dd` (+ sprint doc `1c6b22a`). **Push manual.**
+The demand signal beside shelf prices: what actually sells at Coles, weekly.
+
+## What landed
+- **Parser** (pure, 20 unit tests; header signature pinned — drift throws): 19 measures × 5 variants
+  → 57 landed (`SCAN_MEASURE_COLUMNS` = the shared contract). Channel checksum (in_store + online ==
+  TOTAL) enforced pre-write; null legs surfaced as incomplete, never asserted or coalesced.
+- **Data:** 3 exports found in Downloads — June **manufacturer-split** (market share by supplier:
+  FRESHMAX, PERFECTION FRESH, ROCK RIDGE, PRIVATE LABEL, OTHER MFRS…), June + July own-brand.
+  `raw.retail_scan` 13,228 rows (19,089 parsed; overlap upserted, newest-by-mtime wins);
+  `core.fact_retail_scan` **12,224 weekly rows: 55 weeks (2025-06-24→2026-07-07) × 7 geographies ×
+  5 segments × 11 suppliers × 3 channels**; `semantic.retail_scan` with pack_week_code + promo
+  share + YoY. Product hierarchy `<child>-<parent>` conformed to segment × supplier.
+- **Evidence:** scan:reconcile **8/8** (drift-guard 57/57; parity 12,224==12,224; channel checksum
+  **0 mismatches over 4,679 groups**; 0 unmapped; dim_date joins all 55 weeks; NULLs preserved
+  404/7,732; RLS internal-only fail-closed incl. user_metadata forgery); rls:posture **78/78**;
+  tests **124/124**; idempotent re-run 0 net-new. Ops note: a timed-out client left a zombie
+  ClientRead session holding the upsert — terminated via pg_terminate_backend (the 0031 lesson).
+- **Deferred:** Woolworths scan (needs export sample), auto-ingest channel, SKU/EAN grain (absent
+  from source), Cube exposure.
+
 # Handoff (2026-07-12): Accounts receivable — invoices, cash mirror, Coles remittance reconciliation
 
 Status: **✅ DONE — full AR domain built + adversarially verified.** Migrations `0037`–`0041`
