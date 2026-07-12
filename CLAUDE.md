@@ -277,6 +277,35 @@ INTERNAL-ONLY exposure; category-level (NO EAN/SKU).
 - **Deferred:** Woolworths scan (needs their export; parser per-retailer pluggable), auto-ingestion
   channel, SKU-level scan, Cube exposure.
 
+## Insight layer + NL foundation (insight sprint, 2026-07-12)
+The first CROSS-domain analytics (all INTERNAL-ONLY) + the business-vocabulary layer.
+- **Crosswalks (0045):** `core.crosswalk_customer_retail` (consignee → retailer_group × state;
+  INTERNAL rULE FIRES BEFORE retailer prefixes — MM %/test/QPI/shed names; 100% of retail dispatch
+  volume mapped) · `core.crosswalk_product_segment` (product → scan segment; Lady Finger BEFORE
+  organic; bins/value-added → OUT_OF_SCOPE; kg_per_box = net_weight_value). Rebuilt by
+  `insight:core` — re-run after any dim refresh.
+- **`core.fact_market_week` (0046):** week_ending × retailer_group × state_code × segment — Coles
+  demand (scan) vs OUR supply (dispatch) vs farm-gate $/kg (GP). **Scan weeks end TUESDAY: alignment
+  is date-range (week_ending−6..week_ending), NEVER ISO equality.** Farm-gate anchor =
+  coalesce(pack_date, pickup) — pack_date is null on ~98% of GP rows. Supply-only woolworths/aldi
+  cells ready for their scan. National Coles share observed 0.001..0.541.
+- **Semantic (0047):** `market_week` (price ladder farm→wholesale→till; farm ≈ wholesale BY AGENCY
+  CONSTRUCTION — the interesting spread is wholesale→till) · `customer_margin` (PRE-FREIGHT,
+  mixed month anchors — directional until freight lands; **DR invoices = POSITIVE revenue**,
+  verified debit notes) · `grower_scorecard` (**explicitly is_internal-gated** — pool averages must
+  never compute over a grower's own-rows-only view) · `retail_supplier_share`.
+- **Share sanity is THREE-TIER** (stock timing makes weekly cells legitimately exceed 1): H1
+  national ≤1.05 · H2 pooled state×segment ≤1.10 · H3 weekly ≤2.0 (unit-error ceiling). Weekly
+  >1.05 = DC-receipts-lead-till-sales, surfaced not failed.
+- **NL glossary (0048):** `core.business_term` + `core.nl_phrase` (internal-only; seed function
+  re-runnable — deletes seed/derived only, NEVER source='tim' rows) + `semantic.business_glossary`.
+  1,436 seeded terms (products/customers/growers/sheds/segments/geographies/charges/93 metrics).
+  `nl:tool` regenerates Tim's vocabulary engagement HTML; `nl:load` lands his returned JSON.
+  ⚠ after adding Cube/mart measures, update the 0048 metric seed list AND re-run
+  `select core.seed_business_terms()`.
+- **Proofs:** `npm run insight:reconcile` (21 checks, both-sides-derived parity, share bounds,
+  ladder, RLS behavioral). Registry: 88 relations.
+
 ## Stack
 - TypeScript (ESM, Node ≥ 22 — run `.ts` directly via `--experimental-strip-types`).
 - Supabase Postgres 17 (`data_hub`). Loaders write via `pg` (direct), never PostgREST.

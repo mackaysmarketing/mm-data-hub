@@ -1,3 +1,34 @@
+# Handoff (2026-07-12c): Insight layer + NL foundation
+
+Status: **✅ built + proven (author dry-ran everything in a rolled-back txn pre-handoff; 21/21 live).**
+Migrations `0045`–`0048` applied; commit `048f739`. **Push manual.** The schema-value review's
+conclusions, implemented: the hub's domains are now JOINED, not just landed.
+
+## What landed
+- **Crosswalks:** customer→retailer×state (100% retail volume), product→scan segment (98.76% of
+  banana pallets; bins/value-added OUT_OF_SCOPE surfaced).
+- **`core.fact_market_week`** (2,605 cells; 55 Tuesday-ending weeks): Coles till demand vs our
+  supply vs farm-gate $/kg. National share 0.001..0.541 — Mackays supplies up to ~54% of Coles's
+  banana sell-through in peak weeks. Woolworths/ALDI supply-only cells ready for their scan.
+- **Semantic:** `market_week` (price ladder: avg farm 3.43 / wholesale 3.43 [≈ by agency] /
+  till 5.42 $/kg — the wholesale→till spread is the story), `customer_margin` (pre-freight,
+  DR=positive verified), `grower_scorecard` (achieved vs pool $/kg, paid lag; internal-gated),
+  `retail_supplier_share`.
+- **NL foundation:** business_term/nl_phrase seeded with 1,436 hub-derived terms; the vocabulary
+  engagement (8 sections / 699 entities / top-20-questions prompt) generated + browser-verified
+  (autosave, export round-trip) and DELIVERED to Tim; `nl:load` ready for his JSON (source='tim'
+  rows never touched by re-seeds).
+- **Evidence:** insight:reconcile **21/21** (parity exact on all three sides; share bounds
+  H1/H2/H3; ladder 109/110; RLS behavioral ×7) · posture **88/88** · tests **131/131**. Deviations
+  from the sprint brief, all live-verified + documented in migration headers: farm-gate anchor
+  coalesce(pack_date, pickup); DR invoices positive; three-tier share bounds (flat 1.05 fails on
+  real stock-timing).
+
+## Next
+- Tim returns the vocabulary JSON → `npm run nl:load` → wire the glossary into the Hub MCP catalog
+  (the NL translation engine's query side — its own sprint).
+- Freight/SOH/harvest land → join into market_week/customer_margin (designed-for).
+
 # Handoff (2026-07-12b): Retail scan — Coles weekly sell-through (Circana)
 
 Status: **✅ built + proven from the 3 real exports; adversarial verify in flight at handoff.**
