@@ -116,6 +116,7 @@ const REGISTRY: Record<string, RegistryEntry> = {
   'raw.ns_ar_apply_link':        { cls: 'etl-only', why: 'AR 0038 — PTLL invoice↔payment apply map' },
   'raw.remittance':              { cls: 'etl-only', why: 'AR 0039 — parsed remittance header' },
   'raw.remittance_line':         { cls: 'etl-only', why: 'AR 0039 — parsed remittance lines' },
+  'raw.retail_scan':             { cls: 'etl-only', why: 'Scan 0042 — Coles Circana sell-through landing' },
 
   // ── core: dimensions ───────────────────────────────────────────────────────
   'core.dim_grower':             { cls: 'grower-scoped',    why: '0006; RLS 0008/0010/0026' },
@@ -135,6 +136,7 @@ const REGISTRY: Record<string, RegistryEntry> = {
   'core.fact_revenue_charge':    { cls: 'internal-only', why: '0031' },
   'core.fact_customer_invoice':  { cls: 'internal-only', why: 'AR 0040 — customer book (internal); RLS fail-closed to internal' },
   'core.fact_remittance_line':   { cls: 'internal-only', why: 'AR 0040 — remittance reconciliation (internal)' },
+  'core.fact_retail_scan':       { cls: 'internal-only', why: 'Scan 0043 — retailer sell-through (internal)' },
   // ── core: views ────────────────────────────────────────────────────────────
   'core.load_box_reconciliation':{ cls: 'ungranted-view', invoker: true,  why: '0007 recon surface; cube grant only' },
   'core.crosswalk_ns_grower':    { cls: 'ungranted-view', invoker: false, why: '0015 owner-rights crosswalk; cube grant only' },
@@ -163,6 +165,7 @@ const REGISTRY: Record<string, RegistryEntry> = {
   'semantic.ar_customer_invoice':           { cls: 'semantic-invoker', invoker: true, why: 'AR 0041; internal gate = fact_customer_invoice RLS' },
   'semantic.ar_debtor_open':                { cls: 'semantic-invoker', invoker: true, why: 'AR 0041' },
   'semantic.ar_remittance_reconciliation':  { cls: 'semantic-invoker', invoker: true, why: 'AR 0041' },
+  'semantic.retail_scan':                   { cls: 'semantic-invoker', invoker: true, why: 'Scan 0044; internal gate = fact_retail_scan RLS' },
 };
 
 const ALLOWED_GRANTEES = new Set(['postgres', 'authenticated', 'cube_readonly']);
