@@ -145,6 +145,13 @@ const REGISTRY: Record<string, RegistryEntry> = {
   'core.dim_customer':           { cls: 'internal-only',    pending: true, why: 'SPRINT C1 — customer list is internal; no grower view joins it' },
   'core.dim_product':            { cls: 'shared-reference', pending: true, why: 'SPRINT C1 — harmless lookup, dim_dispatch_state rationale (0030)' },
   'core.dim_date':               { cls: 'shared-reference', pending: true, why: 'SPRINT C1 — calendar/pack-week lookup' },
+  // ── core: insight-layer crosswalks + mart (Insight sprint 2026-07-12, 0045/0046) ──
+  'core.crosswalk_customer_retail': { cls: 'internal-only', pending: true, why: 'Insight 0045 — consignee→retailer/state map (customer-book sensitivity; 0040 posture)' },
+  'core.crosswalk_product_segment': { cls: 'internal-only', pending: true, why: 'Insight 0045 — product→scan segment map (serves internal-only scan surfaces; 0040 posture)' },
+  'core.fact_market_week':          { cls: 'internal-only', pending: true, why: 'Insight 0046 — scan demand × our supply × farm gate mart (internal-grade throughout)' },
+  // ── core: NL glossary (insight/NL sprint, 0048) ────────────────────────────
+  'core.business_term':          { cls: 'internal-only', pending: true, why: 'NL 0048 — business vocabulary → hub entities (names customers/metrics; internal)' },
+  'core.nl_phrase':              { cls: 'internal-only', pending: true, why: 'NL 0048 — free-form phrase → meaning/mapping (internal)' },
 
   // ── semantic ───────────────────────────────────────────────────────────────
   'semantic.grower_dispatch_detail':        { cls: 'semantic-invoker', invoker: true, why: '0008/0022; scope = raw dispatch/pallet + dim_grower RLS' },
@@ -166,6 +173,16 @@ const REGISTRY: Record<string, RegistryEntry> = {
   'semantic.ar_debtor_open':                { cls: 'semantic-invoker', invoker: true, why: 'AR 0041' },
   'semantic.ar_remittance_reconciliation':  { cls: 'semantic-invoker', invoker: true, why: 'AR 0041' },
   'semantic.retail_scan':                   { cls: 'semantic-invoker', invoker: true, why: 'Scan 0044; internal gate = fact_retail_scan RLS' },
+  'semantic.market_week':                   { cls: 'semantic-invoker', invoker: true, pending: true,
+    why: 'Insight 0047; internal gate = fact_market_week RLS via security_invoker' },
+  'semantic.customer_margin':               { cls: 'semantic-invoker', invoker: true, pending: true,
+    why: 'Insight 0047; internal gate = fact_customer_invoice + fact_settlement_bridge RLS' },
+  'semantic.grower_scorecard':              { cls: 'semantic-invoker', invoker: true, pending: true,
+    why: 'Insight 0047; STRICT internal via explicit is_internal_claim() WHERE gate (pool comparisons; 0035 rationale) on top of invoker RLS' },
+  'semantic.retail_supplier_share':         { cls: 'semantic-invoker', invoker: true, pending: true,
+    why: 'Insight 0047; internal gate = fact_retail_scan RLS' },
+  'semantic.business_glossary':             { cls: 'semantic-invoker', invoker: true, pending: true,
+    why: 'NL 0048 agent catalog; internal gate = business_term/nl_phrase RLS via security_invoker' },
 };
 
 const ALLOWED_GRANTEES = new Set(['postgres', 'authenticated', 'cube_readonly']);
