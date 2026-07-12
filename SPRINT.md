@@ -1,167 +1,152 @@
-# Sprint: Warehouse closeout — conformed dims, cross-source ties, governance sweep, MCP wiring
-Date: 2026-07-11
+# Sprint: Accounts Receivable — customer invoices, cash mirror, Coles remittance reconciliation
+Date: 2026-07-12
 Repo: mm-data-hub
 
 ## Why this bundle
-Tim deferred the revenue-class marking and asked for one large session that closes as many remaining
-items as possible. This sprint bundles everything from the backlog (DATA_HUB_AUDIT.md §8, prior
-SPRINT out-of-scope lists, session memory) that is (a) buildable autonomously from data already in
-reach, (b) not gated on Tim's sign-off, external credentials, infra decisions, or another repo.
-Everything excluded is listed at the bottom WITH its blocking reason, so the backlog after this
-sprint is only "genuinely blocked" items.
+The hub models the PAYABLE side of grower money two ways (NetSuite RCTIs + FreshTrack GP). This sprint
+builds the RECEIVABLE mirror: customer invoices (what supermarkets owe us), the cash/paid status, and
+automated reconciliation of **customer remittance advices** against our invoices. All INTERNAL-ONLY
+(the customer book is commercially sensitive; never grower-facing). Every design fact below was
+verified live 2026-07-12 — do not re-derive, but re-confirm counts (they grow).
 
-## Scope — seven chunks, in build order
+## Ground truth (verified live 2026-07-12 — the design rests on these)
+- **FreshTrack = invoice ORIGIN.** `public.invoice` (14,086 rows; customer AR = `invoice_type IN
+  ('PI','SI','CN','DR')` ≈ 13,275; exclude 742 `RCTI` grower-leakage rows). HEADER GRAIN — no
+  invoice-line table. `public.dispatch_load_invoice` junction = exactly 1 dispatch_load per invoice →
+  joins `raw.ft_dispatch_load` (already landed) → consignee (customer) + order_id/po_no. Lineage
+  proven: on PI+SI invoiced loads po_no 100%, dispatch_load_id 100%, order_id 88%. FreshTrack has NO
+  usable paid date (`invoice.paid_on` dead 4/14,086); `invoice.payment_status` is a STALE code (PB
+  on already-remitted invoices — proven). Incremental key `last_modified_on`.
+- **NetSuite = debtor/cash MIRROR** (subsidiary 2; `customer.subsidiary=2` reachable). Types:
+  `CustInvc` 13,216 · `CustPymt` 2,173 · `CustCred` 578 · `CustDep` 17 (2024-09-24→2026-07-10).
+  **THE CROSSWALK: `CustInvc.externalid` = FreshTrack `invoice.invoice_no` (FTxxxxx)** — deterministic
+  (verified: externalid `FT000899`/`FT001311`…). `tranid` = NS number (MM…; 697 `35…` = Opening
+  Balance migration rows, memo='Opening Balance', NO FT number → flag+exclude from FT reconciliation).
+  Paid path = `previoustransactionlinelink` `linktype='Payment'`, `previoustype='CustInvc'` →
+  `CustPymt` (12,104 links) → payment `trandate` = paid date, applied `foreignamount` = applied cash.
+  `CustPymt.foreigntotal` ties to remittance Total (payment 181998 = $1,898,521.87 = Coles Payment No
+  3300004309). `CustCred.otherrefnum` carries Coles claim/payment refs (e.g. `3300270575`, or an
+  `FT…`). Same REST SuiteQL shape as the RCTI loader (mainline='T' summary = `foreigntotal`, taxline,
+  `uniquekey` line PK, `foreignamount`/`netamount`; NO amount/posting/account, NO transaction.subsidiary).
+- **Coles remittance = text-based PDF** (clean pypdf extract, NO OCR). Filename
+  `YYYYMMDD_<colesAcct 942306>_<seq>_<paymentNo>.pdf`. Line table: `Invoice/Claim No | Doc Type
+  (KD=invoice / LJ=claim-adjustment) | Date DD.MM.YYYY | Store No (C+consignee b2b_code, e.g.
+  C9314FV=Coles Melbourne) | Document $ (gross) | Discount $ (Coles 2.5% settlement = the retail
+  rebate) | Payment $ (net) | GST | WT`; then `Total for Coles Supermarkets` + a Payment-No summary.
+  Header/footer: **Payment No**, **Period Ending**, **Total Amount**, Vendor No 6007716. Checksum:
+  Σ line Payment$ = Total Amount (proven $1,898,521.87 / 81 lines / 3 pages incl. a negative claim).
+  **Reconciliation join proven live: KD line `invoice_no` (FTxxxxx) = FreshTrack `invoice.invoice_no`
+  EXACT on amount → Coles consignee (6/6 sampled).** Edge cases (all in the 2 samples): suffix
+  variants (`FT003402A` ≠ `FT003402` — match literally, NEVER strip the letter), claim/adjustment
+  lines (`REV…`, bare `1295067`, type LJ, can be negative) that match no invoice = the deductions
+  bucket. **Key value: FreshTrack payment_status is stale → the remittance (corroborated by NS
+  CustPymt) IS the paid truth.**
 
-### Chunk 1 — Conformed dimensions: dim_customer, dim_product, dim_date (audit §8.10)
-The biggest reporting gap that is purely internal work. Verified live 2026-07-11:
-- **Customer names have ZERO coverage** — 103 distinct load consignees / 66 GP consignees, none
-  present in raw.ft_entity (318 rows ≈ consignors only). This is why
-  semantic.settlement_bridge_by_customer carries NULL names today.
-- ~153–156 distinct product_ids across pallets/orders/GP; product names currently live only in
-  pallet display strings (SPEC §9.7 format codes) — parsed ad hoc, never conformed.
-Build:
-- **Extend the entity ingest** to land ALL entities referenced as load/GP consignees (raw.ft_entity
-  is our landing table; widening its ingest is a loader change, not a schema break). Idempotent,
-  window-resumable as usual.
-- **core.dim_customer** (consignee grain): name, entity metadata, is_consignee/is_consignor flags.
-  INTERNAL-ONLY + cube_readonly (no grower-facing view joins it today; least privilege, additive
-  later).
-- **core.dim_product** (product_id grain): display name parsed per SPEC §9.7 (strip `^{…}`/`[nn]`
-  codes), crop, variety, pack descriptor — sourced from pallet descriptors (+ order item_no/EAN
-  where they exist). SHARED REFERENCE posture (harmless lookup; a grower view may join it later)
-  — same rationale as dim_dispatch_state in 0030.
-- **core.dim_date**: calendar date grain incl. ISO week + the FreshTrack pack-week code (`Y{YY}W{WW}`)
-  so pack-week ↔ calendar joins stop being string surgery. SHARED REFERENCE.
-- **Wire names through**: refresh core.fact_settlement_bridge denormalising consignee_name from the
-  now-complete entity set; settlement_bridge_by_customer shows real names.
+## Scope — build order
 
-### Chunk 2 — Settlement cross-source tie at bill grain (NetSuite ↔ GP)
-The deferred "NetSuite fact_settlement_bill cross-check". Both sides are landed and proven
-individually; the tie exists only as one-off parity numbers (grand net 0.6%, deductions 0.1%).
-Build **core.recon_settlement_source** (view, internal-only): grower × month with GP
-gross/deductions/GST/net/paid vs NetSuite gross/deductions/tax/net/paid + deltas, plus
-`npm run settle:tie` printing grand + per-grower ties and the explained residuals (AG* sub-entities,
-null-consignor schedules) — committed report. No new facts; a governed reconciliation surface.
+### Chunk 1 — FreshTrack invoice landing (migration 0037, loader `ft:invoice:load`)
+`raw.ft_invoice` (header, faithful useful-subset incl. `invoice_no`, `invoice_type`, `amount_value`,
+`amount_currency`, `payment_status`, `sync_status`, `ext_link`, `sent_on`, `paid_on`, `created_on`,
+`last_modified_on`) + `raw.ft_dispatch_load_invoice` (junction: id, invoice_id, dispatch_load_id,
+timestamps). Replica full-sync/incremental by `last_modified_on`, idempotent upsert on id, sync_window
+resume — mirror `src/loaders/ft_gp.ts` + the reference loader. Posture: raw etl-only (cube_readonly
+grant, no authenticated, no RLS — the 0017/0018 pattern).
 
-### Chunk 3 — Retail brought to proof parity (audit Tier 1 #3)
-Retail is the only live domain without the house-standard reconcile proof.
-`scripts/retail_reconcile.ts` (`npm run retail:reconcile`): raw→semantic invariants — day-grain
-latest-capture dedupe correctness, watchlist flag counts vs dim_retail_product, per-retailer/state
-row parity vs raw, NULL prices preserved (never coalesced) — committed report in reports/.
+### Chunk 2 — NetSuite AR landing (migration 0038, loader `ns:ar:load`)
+`raw.ns_customer_invoice` (header: id, tranid, externalid=FT no, trandate, entity, foreigntotal,
+status, otherrefnum) + `raw.ns_customer_invoice_line` (uniquekey PK, transaction, mainline, taxline,
+item, foreignamount, netamount) + `raw.ns_customer_payment` (id, tranid, trandate, entity,
+foreigntotal, otherrefnum) + `raw.ns_customer_credit` (id, tranid, trandate, entity, foreigntotal,
+otherrefnum) + `raw.ns_ar_apply_link` (PTLL AR side: previousdoc, nextdoc, previoustype, nexttype,
+linktype, foreignamount, nextdate). SuiteQL via existing `src/lib/netsuite.ts`; scope customers to
+`subsidiary=2`; incremental by `lastmodifieddate`. Mirror `src/loaders/ns_settlement.ts`. Raw etl-only.
 
-### Chunk 4 — Automated RLS/grant posture sweep
-0030 already remediated dim_dispatch_state / dim_gp_charge / dim_ns_charge (the old out-of-scope
-note is stale). Verified stragglers today: **core.dim_shed has RLS disabled**; grant/policy
-combinations drift silently. Build `scripts/rls_posture.ts` (`npm run rls:posture`): enumerate EVERY
-relation in raw/core/semantic and assert it matches one declared posture —
-{grower-scoped, internal-only, shared-reference, cube-only, etl-only} — from an explicit in-script
-registry; FAIL on unknown relations or anomalies (e.g. authenticated grant with RLS off). Fix what
-it finds (known: dim_shed — posture per its consumer surface; check whether a grower view joins it
-before choosing shared-reference vs internal). Joins the standing proof suite.
+### Chunk 3 — Coles remittance parser + landing (migration 0039, `src/lib/remittance_coles.ts`, loader `remit:load`)
+Pure, unit-tested parser: PDF text (via a text extractor — use `pdf-parse` or the same pypdf approach
+invoked as a child process, OR a dependency-free text pass — decide at build; text extraction is
+clean) → `{ header: {retailer:'coles', payment_no, period_ending, total_amount, vendor_no, source_file},
+lines: [{ invoice_no, doc_type, doc_date, store_no, document_amount, discount_amount, payment_amount,
+gst, wt, is_claim }] }`. Enforce the checksum (Σ payment_amount == total_amount) and surface any
+drift. `raw.remittance` (header grain, natural key = retailer+payment_no) + `raw.remittance_line`.
+Loader takes a file/dir of PDFs (channel = manual drop for now; auto-ingest deferred). Raw etl-only.
+Parser is per-retailer pluggable (`remittance_coles` today; woolworths/aldi later) — keep the retailer
+dispatch clean.
 
-### Chunk 5 — Hub MCP: multi-farm identity, wire sales, self-deriving proofs
-Three known gaps, all internal wiring (NOT the remote connector — see exclusions):
-1. **`mcp/identity.ts` reads only the scalar `consignor_id`** — migration 0026 widened RLS to a
-   consignor SET, so a multi-farm grower under-scopes through the MCP today. Read
-   `app_metadata.consignor_ids[]` with scalar fallback, matching DB + Cube.
-2. **Wire `list_grower_sales`** (stubbed "Phase 2 — replica blocked"; settlement has long been
-   landed): grower-scoped settlement listing over semantic.grower_gp_settlement (paid date
-   first-class), same envelope + registry validation as the other tools.
-3. **`scripts/mcp_proof.ts` baselines are stale June-21 hardcodes** (19/25 today on baseline drift
-   only). Replace absolute-count asserts with source-SQL-derived expectations computed in the same
-   run, and extend the suite to cover the new sales tool across all five contexts.
+### Chunk 4 — Core: fact_customer_invoice + reconciliation (migration 0040, loader `ar:core`)
+- `core.fact_customer_invoice` (invoice grain = FreshTrack invoice, customer AR types only): keys
+  invoice_id, invoice_no, invoice_type, consignee_id (via junction→dispatch_load), dispatch_load_id,
+  order_id, po_no, crop/product where available; measures amount_value; NS enrichment via
+  `externalid=invoice_no` → ns_invoice_id, ns_tranid, **paid_date** (max apply-link nextdate),
+  **paid_amount** (Σ applied), paid_status (paid/part/unpaid), is_short_pay. Denormalise
+  consignee_name (dim_customer). Idempotent temp-table refresh (0031 perf pattern).
+- `core.fact_remittance_line` (remittance line grain) with recon status: match remittance `invoice_no`
+  → fact_customer_invoice (literal, incl. suffix); classify **matched / short_pay / over_pay /
+  claim (LJ, no invoice) / unmatched**; carry document/discount/payment amounts + the invoice's
+  amount for the variance. Crosswalks: NS customer→dim_customer by entityid/name (documented,
+  surfaced-not-dropped); store_no→consignee b2b_code.
 
-### Chunk 6 — Freshness: incremental loads everywhere + full suite re-run
-Prove the pipelines are turnkey and retire the stale-baseline class of failure: run every
-incremental loader (dispatch GraphQL windows + pallets + entities incl. the chunk-1 widening; GP
-`--since`; NetSuite `--since`; orders), document row deltas, then re-run the ENTIRE proof battery
-green on fresh data: dispatch reconcile, GP reconcile + parity + RLS, NS reconcile + RLS + parity,
-order reconcile + RLS, bridge verify + RLS, retail reconcile (new), settle:tie (new), rls:posture
-(new), rls:multifarm, mcp:proof (now self-deriving), unit tests, typecheck.
-Note (memory, to re-verify): plain `ft:dispatch:load` previously aborted on Sprint-8 draft state;
-raw.ft_dispatch_load_state now exists with 14 rows — if the loader still trips, fix forward, don't
-work around.
+### Chunk 5 — Semantic + RLS (migration 0041)
+INTERNAL-ONLY, security_invoker, fail-closed to `is_internal_claim()` + cube_readonly (the 0024/0025
+pattern): `semantic.ar_customer_invoice` (invoice + paid status + lineage), `semantic.ar_debtor_open`
+(open/aged invoices), `semantic.ar_remittance_reconciliation` (the discrepancy report: matched /
+short-pay / claim / unmatched, with $ variance). Update `scripts/rls_posture.ts` REGISTRY for every
+new relation (the sweep FAILS on unregistered relations — that is the point).
 
-### Chunk 7 — Documentation closeout
-- Commit the currently-untracked DATA_HUB_AUDIT.md, GROWER_MCP_PROPOSAL.md,
-  KNOWLEDGE_GRAPH_PROPOSAL.md (this sprint references them; they must survive the working tree).
-- Update CLAUDE.md (new dims, new proofs, posture registry) and HANDOFF.md (evidence per chunk).
-- Clean tree at handoff. Push remains MANUAL (mackaysmarketing PAT per CLAUDE.md — listed for Tim).
+### Chunk 6 — Proofs
+- `ar:reconcile` — FreshTrack invoice landing parity vs replica; NS↔FT invoice tie on externalid (match
+  rate + unmatched buckets incl. Opening Balance); cash tie (Σ CustPymt applied vs invoices marked
+  paid); all expectations DERIVED in-run (no hardcoded baselines — house contract).
+- `remit:reconcile` — parser checksum on the 2 sample files; remittance→invoice match rate; the
+  discrepancy buckets quantified; committed report.
+- `ar:rls` — every AR fact + semantic view returns 0 under a grower/no-claim/forged JWT, real rows
+  under internal.
+- Re-run `rls:posture` (must stay green with the new relations registered) + the full existing battery.
 
 ## Acceptance Criteria
-- [ ] **C1 dims:** raw.ft_entity covers 100% of load + GP consignee_ids (paste before/after counts);
-      dim_customer / dim_product / dim_date exist with row counts pasted; product names parse clean
-      (0 rows still carrying `^{…}`/`[nn]` codes); settlement_bridge_by_customer returns real names
-      (paste top-10 customers by grower_gross); bridge refresh re-run with 23,544-row parity intact.
-- [ ] **C2 tie:** recon_settlement_source exists; settle:tie output pasted — grand GP-vs-NS net within
-      the known 0.6%, per-grower table, every residual bucket explained (not hand-waved); report
-      committed.
-- [ ] **C3 retail:** retail:reconcile passes with pasted output (dedupe, watchlist, parity, null-price
-      invariants); report committed.
-- [ ] **C4 posture:** rls:posture enumerates every raw/core/semantic relation with ZERO unclassified
-      and ZERO anomalies (paste summary); dim_shed (and anything else found) remediated by migration
-      with the posture rationale documented; no existing policy weakened.
-- [ ] **C5 MCP:** multi-farm consignor_ids[] honored (proof: multi-farm grower context sees BOTH farms
-      through the MCP, single-farm unchanged, forged/no-claim still 0); list_grower_sales live with
-      identity proofs across internal + 2 growers + no-claim + forged; mcp:proof fully self-deriving
-      and green (paste N/N); no baseline constants remain.
-- [ ] **C6 freshness:** every incremental loader run with row deltas pasted; the full proof battery
-      re-run green AFTER the loads (paste the consolidated results table).
-- [ ] **C7 docs:** audit + proposals committed; CLAUDE.md + HANDOFF.md updated; `git status` clean
-      (paste); commits listed for Tim to push.
+- [ ] **C1:** raw.ft_invoice + raw.ft_dispatch_load_invoice landed; counts pasted; customer-AR filter
+      (exclude RCTI) applied; idempotent re-run lands 0 net-new.
+- [ ] **C2:** raw.ns_customer_invoice/line/payment/credit + apply-link landed (subsidiary-2 scope);
+      counts pasted; externalid=FT-number populated on the expected share (Opening-Balance rows
+      flagged); paid-date path resolves (sample pasted).
+- [ ] **C3:** Coles parser unit-tested; both sample PDFs parse with the checksum (Σ payment == total)
+      EXACT; raw.remittance + raw.remittance_line landed; counts + a parsed sample pasted.
+- [ ] **C4:** core.fact_customer_invoice built (invoice grain), paid_date/paid_amount/paid_status
+      populated from NS; fact_remittance_line built with recon status; the 6-of-6 proven join holds at
+      scale (match-rate pasted); NS↔FT invoice tie pasted.
+- [ ] **C5:** semantic AR views exist, INTERNAL-ONLY; rls_posture REGISTRY updated; sweep green.
+- [ ] **C6:** ar:reconcile + remit:reconcile + ar:rls all green with pasted evidence; the remittance
+      discrepancy report shows matched/short-pay/claim/unmatched buckets on the real Coles payment;
+      full existing battery still green; typecheck + tests.
+- [ ] HANDOFF.md + CLAUDE.md updated; committed.
 
 ## Definition of Done
 - [ ] All acceptance criteria checked with pasted evidence
-- [ ] `npm run typecheck` clean; `npm test` green; every proof script green on fresh data
-- [ ] No destructive SQL; migrations touch only raw/core/semantic; nothing weakens an existing policy
-- [ ] HANDOFF.md updated; committed to git (push manual — PAT)
+- [ ] `npm run typecheck` clean; `npm test` green; every new + existing proof green
+- [ ] Migrations touch only raw/core/semantic; INTERNAL-ONLY RLS proven fail-closed; no policy weakened
+- [ ] No secrets; READ-ONLY out of FreshTrack + NetSuite (never write); clean tree at handoff
+
+## Explicitly deferred (with reason)
+- **Woolworths + ALDI remittance parsers** — need their sample files/formats (Tim to provide). The
+  parser is built per-retailer pluggable so they slot in without rework. Coles is complete this sprint.
+- **Auto-ingestion channel** (email/SFTP/portal fetch of remittance PDFs) — an ops integration; the
+  loader consumes a file/dir for now. Channel confirmed later.
+- **Cube exposure of AR metrics** — after the invoice + reconciliation definitions are signed off.
+- **Revenue-class wiring** (settlement bridge) — still waiting on Tim's CSV; unrelated.
 
 ## Quality Rubric (Mackays / mm-data-hub)
-- SQL against the layers is the oracle; counts reconcile across every boundary; no key field dropped.
-- Defensive on nulls everywhere (names, prices, dates); never coalesce measures to 0.
-- New dims ship with declared RLS posture + policies matching the house patterns; enforcement proven.
-- Idempotent, resumable loaders; re-run lands zero net-new rows.
-- Universal: no secrets, no empty catch blocks, no TODO in the critical path, clean tree at handoff.
-- Hard blockers: posture sweep zero-anomaly, MCP multi-farm fix proven, freshness battery green.
+- SQL is the oracle; counts reconcile across every boundary; no key dropped. Never coalesce nullable
+  measures to 0. Deterministic crosswalks (externalid=FT no; NS customer→dim_customer documented).
+- READ-ONLY out of both sources. Idempotent, resumable loaders. Parser pure + unit-tested + checksum.
+- INTERNAL-ONLY RLS on every AR relation, proven fail-closed; new relations registered in rls_posture.
+- Proof-style contract: NO hardcoded baselines — derive expected numbers in-run from source.
 
 ## Goal Condition
-/goal The closeout sprint is done in mm-data-hub per SPRINT.md dated 2026-07-11: (C1) dim_customer +
-dim_product + dim_date built with full consignee coverage and real customer names flowing through the
-bridge views; (C2) settle:tie green with the GP↔NetSuite bill-grain reconciliation surface committed;
-(C3) retail:reconcile green and committed; (C4) rls:posture enumerates every raw/core/semantic
-relation with zero unclassified and zero anomalies, stragglers remediated; (C5) MCP honors
-consignor_ids[] multi-farm identity, list_grower_sales is wired, and mcp:proof is self-deriving and
-fully green; (C6) all incremental loaders run and the entire proof battery re-run green on fresh
-data; (C7) docs committed and tree clean. Paste real command output as evidence for every criterion.
-Do not touch public.*, Cube config, the revenue_class column values, or grower-facing view
-definitions except where a chunk explicitly says so. Stop after 45 turns.
-
-## Explicitly deferred — and why (the post-sprint backlog is exactly this list)
-- **Revenue classification wiring** — Tim deferred the marking (2026-07-11). Tool is ready
-  (reports/revenue_class_marker_2026-07-09.html); wiring resumes when the CSV comes back.
-- **Cube exposure of the settlement bridge** — SPRINT 2026-07-09 gates it on Tim signing off the
-  variance + revenue definitions; revenue is deferred, so the gate stands.
-- **Dispatch metric redefinition** (seq≥5 + stock+reconsigned as THE dispatch definition) — designed,
-  deferred pending ops sign-off; the additive dispatch_shipped surface already exists.
-- **Grower-facing remote MCP connector** — needs hosting + auth-shape decisions (OAuth 2.1 vs interim
-  token) and mm-hub token issuance; chunk 5 deliberately completes every part that is internal.
-- **Business knowledge graph MVP** — its sources live in mm-hub's `public.*` schema, which this repo
-  must not read; needs an agreed cross-repo interface (export, FDW, or mm-hub-owned view) first.
-- **Customer AR invoicing + remittance reconciliation** — its own sprint per the audit (per-customer
-  PDF parsing scoped at design time); chunk 1's dim_customer is deliberately its prerequisite.
-- **Harvest/yield, retail scan (IRI/Quantium), wholesale benchmarks, QC/claims** — new external
-  sources requiring discovery/credentials.
-- **Backfilling the 2,339 loads with no order_id** — a source-data gap, not derivable in the hub.
-- **Push to GitHub** — requires the mackaysmarketing PAT (manual, per CLAUDE.md).
-
-## Notes for the build session
-- Replace this file's predecessor (settlement-bridge sprint) is already committed at bc03af7; commit
-  this SPRINT.md before starting.
-- Bridge refresh + any big rebuild: use the temp-table + ANALYZE pattern (0031) — CTEs get no stats
-  and the pooler login timeout is 2 min; `set local statement_timeout` inside a transaction.
-- raw.ft_entity widening: additive columns only if needed; existing 318 rows must be preserved
-  (upsert on id, house pattern).
-- dim_customer names are commercially neutral (business names) but the customer LIST is internal —
-  internal-only posture unless a grower surface is found to need it (then document the change).
-- Run the evaluator (dispatched Agent View session, standard skeptical-QA prompt) after the goal loop
-  reports done; it must re-run the SQL itself.
+/goal The AR sprint is complete in mm-data-hub per SPRINT.md dated 2026-07-12: FreshTrack invoices +
+NetSuite customer AR (invoices/payments/credits/apply-links) + Coles remittances are landed
+(raw 0037/0038/0039); core.fact_customer_invoice carries NS-derived paid_date/paid_amount/paid_status
+via CustInvc.externalid=invoice_no, and core.fact_remittance_line classifies every Coles line as
+matched/short-pay/claim/unmatched (0040); semantic AR views are INTERNAL-ONLY and fail-closed (0041,
+rls_posture registry updated + green); ar:reconcile, remit:reconcile (checksum exact on both sample
+PDFs), and ar:rls are green with pasted evidence, and the full existing battery + typecheck + tests
+stay green. READ-ONLY out of FreshTrack + NetSuite. Woolworths/ALDI parsers + auto-ingestion channel
+deferred. Paste real command output for every criterion. Stop after 50 turns.
