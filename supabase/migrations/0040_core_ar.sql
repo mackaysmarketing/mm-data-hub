@@ -46,8 +46,8 @@ create table if not exists core.fact_customer_invoice (
   paid_amount        numeric,              -- Σ applied CustPymt (actual cash); null = no NS match
   credit_amount      numeric,              -- Σ applied CustCred
   paid_date          date,                 -- max CustPymt apply date; null = unpaid (never zero-dated)
-  paid_status        text,                 -- paid / part / unpaid / no_ns_match
-  open_amount        numeric,              -- amount_value − settled (>0 = still owed)
+  paid_status        text,                 -- paid (has cash) / credited (settled by credit only) / part / unpaid / no_ns_match
+  open_amount        numeric,              -- coalesce(ns_amount,amount_value) − settled (>0 = still owed)
   _built_at          timestamptz not null default now()
 );
 create index if not exists ix_fci_consignee on core.fact_customer_invoice (consignee_id);
@@ -87,14 +87,20 @@ begin
     dl.consignee_id, c.name, l.dispatch_load_id, dl.load_no, dl.order_id, dl.order_no, dl.po_no,
     ni.id, ni.tranid, ni.foreigntotal,
     p.paid_amount, p.credit_amount, p.paid_date,
+    -- paid_status + open_amount BOTH anchor on coalesce(ns_amount, amount_value) so they can never
+    -- contradict (adversarial review: 18 invoices have ns_amount≠amount_value; a split anchor left 6
+    -- 'paid' yet open>0). 'paid' REQUIRES cash (paid_amount<>0 → paid_date non-null); an invoice
+    -- settled purely by credit memo is 'credited' (paid_date null, correct — no cash event).
     case
       when ni.id is null then 'no_ns_match'
       when abs(coalesce(p.paid_amount,0) + coalesce(p.credit_amount,0)) >= abs(coalesce(ni.foreigntotal, i.amount_value)) - 0.01
-           and coalesce(p.paid_amount,0) + coalesce(p.credit_amount,0) <> 0 then 'paid'
+           and coalesce(p.paid_amount,0) <> 0 then 'paid'
+      when abs(coalesce(p.paid_amount,0) + coalesce(p.credit_amount,0)) >= abs(coalesce(ni.foreigntotal, i.amount_value)) - 0.01
+           and coalesce(p.credit_amount,0) <> 0 then 'credited'
       when coalesce(p.paid_amount,0) + coalesce(p.credit_amount,0) <> 0 then 'part'
       else 'unpaid'
     end,
-    round(coalesce(i.amount_value,0) - (coalesce(p.paid_amount,0) + coalesce(p.credit_amount,0)), 2),
+    round(coalesce(ni.foreigntotal, i.amount_value) - (coalesce(p.paid_amount,0) + coalesce(p.credit_amount,0)), 2),
     now()
   from raw.ft_invoice i
   left join load1 l on l.invoice_id = i.id

@@ -27,4 +27,5 @@ PASS  Coles settlement discount ≈ 2.5% — avg discount = 2.500%
 
 ## 4. Matched-invoice NetSuite paid-status corroboration
   invoice_paid_status | lines
-  paid | 71
+  paid | 70
+  credited | 1

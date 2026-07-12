@@ -53,19 +53,27 @@ async function main(): Promise<void> {
     check('fact NS-matched == NS invoices with a resolvable FT externalid', x.fact_ns_matched === x.ns_ft_resolvable,
       `fact_matched=${x.fact_ns_matched} ns_resolvable=${x.ns_ft_resolvable}; non-FT/opening NS rows=${x.ns_non_ft_opening}; fact w/o NS=${x.fact_no_ns} (surfaced)`);
 
-    // 3. Cash tie — fact paid_amount vs applied CustPymt on in-scope invoices
-    console.log('\n--- 3. Cash tie: Σ fact.paid_amount == Σ applied CustPymt ---');
+    // 3. Cash tie — INDEPENDENT corroboration (adversarial review: comparing fact.paid_amount to
+    // Σ applied CustPymt is circular — the fact IS that sum). The independent tie is the apply-link
+    // detail (foreignamount) vs the CustPymt HEADER totals (foreigntotal, a different table/column):
+    // if they agree, the apply-links are not mis-loaded. Then the in-scope fact partitions cleanly.
+    console.log('\n--- 3. Cash tie: apply-link detail == CustPymt headers (independent) ---');
     const cash = (await c.query(
-      `with applied as (
-         select round(sum(l.foreignamount),2) as amt
-         from raw.ns_ar_apply_link l
-         where l.previoustype='CustInvc' and l.nexttype='CustPymt'
-           and l.previousdoc in (select ns_invoice_id from core.fact_customer_invoice where ns_invoice_id is not null))
-       select (select round(sum(paid_amount),2) from core.fact_customer_invoice)::text as fact_paid,
-              (select amt from applied)::text as applied_pymt`)).rows[0]!;
+      `select
+         (select round(sum(foreignamount),2) from raw.ns_ar_apply_link
+            where previoustype='CustInvc' and nexttype='CustPymt')::text as applied_detail,
+         (select round(sum(foreigntotal),2) from raw.ns_customer_payment)::text as pymt_headers,
+         (select round(sum(paid_amount),2) from core.fact_customer_invoice)::text as fact_inscope,
+         (select round(sum(foreignamount),2) from raw.ns_ar_apply_link l
+            where l.previoustype='CustInvc' and l.nexttype='CustPymt'
+              and l.previousdoc not in (select ns_invoice_id from core.fact_customer_invoice where ns_invoice_id is not null))::text as applied_out_of_scope`)).rows[0]!;
     table([cash]);
-    check('Σ fact.paid_amount == Σ applied CustPymt', Math.abs(Number(cash.fact_paid) - Number(cash.applied_pymt)) < 0.01,
-      `fact=${cash.fact_paid} applied=${cash.applied_pymt}`);
+    check('apply-link CustPymt detail == CustPymt header totals (independent)',
+      Math.abs(Number(cash.applied_detail) - Number(cash.pymt_headers)) < 1.0,
+      `detail=${cash.applied_detail} headers=${cash.pymt_headers}`);
+    check('fact in-scope paid + out-of-scope applied == total applied (partition)',
+      Math.abs((Number(cash.fact_inscope) + Number(cash.applied_out_of_scope)) - Number(cash.applied_detail)) < 0.02,
+      `inscope=${cash.fact_inscope} + out=${cash.applied_out_of_scope} == ${cash.applied_detail}`);
 
     // 4. Paid-status partition + lineage
     console.log('\n--- 4. Paid-status breakdown + lineage coverage ---');

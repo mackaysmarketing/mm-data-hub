@@ -36,11 +36,14 @@ async function proveRel(client: PoolClient, rel: string, grower: string): Promis
   const noClaim = await rows(client, rel, claims({}));
   const forgedInternal = await rows(client, rel, claims({ is_internal: true }));
   const forgedBoth = await rows(client, rel, claims({ consignor_id: grower, is_internal: true }));
+  // user_metadata is grower-editable — a forgery there must be ignored (only app_metadata is trusted)
+  const forgedUserMeta = await rows(client, rel, claims({ user_metadata: { is_internal: true, consignor_id: grower } }));
   check(`[${rel}] internal sees rows`, internal > 0, `rows=${internal}`);
   check(`[${rel}] grower claim → 0 (AR never grower-facing)`, growerCtx === 0, `rows=${growerCtx}`);
   check(`[${rel}] no claim → 0 (fail closed)`, noClaim === 0, `rows=${noClaim}`);
   check(`[${rel}] forged top-level is_internal → 0`, forgedInternal === 0, `rows=${forgedInternal}`);
   check(`[${rel}] forged top-level consignor+is_internal → 0`, forgedBoth === 0, `rows=${forgedBoth}`);
+  check(`[${rel}] forged user_metadata is_internal+consignor → 0`, forgedUserMeta === 0, `rows=${forgedUserMeta}`);
 }
 
 async function main(): Promise<void> {
