@@ -1,3 +1,51 @@
+# Handoff (2026-07-12): Accounts receivable — invoices, cash mirror, Coles remittance reconciliation
+
+Status: **✅ DONE — full AR domain built + adversarially verified.** Migrations `0037`–`0041`
+applied. Commits `b5365b7` (build) + `3075d34` (review hardening). **Push manual** (mackaysmarketing
+PAT). The receivable mirror of grower settlement — now the hub models both money directions.
+
+## What landed
+- **Landing (0037/0038/0039):** `raw.ft_invoice` (14,086) + `raw.ft_dispatch_load_invoice` (14,054,
+  1 load/invoice) · six `raw.ns_customer*` tables (80,744 rows: 13,215 CustInvc, 51,261 lines, 2,172
+  CustPymt, 578 CustCred, 13,391 apply-links, 127 customers) · Coles `raw.remittance` (2) +
+  `raw.remittance_line` (74). Loaders `ft:invoice:load` / `ns:ar:load` / `remit:load`. All etl-only.
+- **Core (0040):** `core.fact_customer_invoice` (13,275; paid_status **11,279 paid / 418 credited /
+  620 unpaid / 12 part / 946 no_ns_match**) — paid status from NetSuite via the deterministic
+  `CustInvc.externalid = ft_invoice.invoice_no` crosswalk + apply-links. `core.fact_remittance_line`
+  (74: **71 matched / 2 claim / 1 unmatched**). `ar:core`.
+- **Coles remittance parser** — pure, unit-tested (9 tests), checksum (Σ line payment = header total),
+  per-retailer pluggable. **Woolworths/ALDI + auto-ingestion deferred** (need samples / channel).
+- **Semantic (0041, internal-only, security_invoker):** `ar_customer_invoice`, `ar_debtor_open`
+  (aged open receivables), `ar_remittance_reconciliation` (the discrepancy report).
+
+## Evidence (2026-07-12, all re-runnable)
+- **ar:reconcile 6/6** — landing parity (13,275=13,275); NS↔FT crosswalk (12,329 matched, unique, no
+  fan-out; 946 no-NS + 885 non-FT surfaced); **independent cash tie** apply-link detail
+  $184,221,410.41 == CustPymt headers $184,221,410.42 ($0.01), partitioning to in-scope $176.27M +
+  out-of-scope $7.95M; lineage 13,114/13,275.
+- **remit:reconcile 4/4** — checksum exact both advices; 71 matched (variance 0); Coles settlement
+  discount exactly 2.5%; report committed. The real $1.9M Coles payment reconciled line-by-line.
+- **ar:rls 30/30** — internal-only fail-closed on 2 facts + 3 views (grower / no-claim / forged
+  top-level / forged user_metadata all 0; internal full).
+- **rls:posture 75/75** (15 new AR relations registered, 0 anomalies). Battery unregressed: tests
+  104/104, bridge 6/6, multifarm 45/45, dims 7/7, typecheck clean.
+
+## Adversarial review (4 skeptics, independent SQL) — outcome
+Security **CONFIRMED** (behavioral RLS held on every relation; raw etl-only permission-denied;
+posture complete). Remittance **CONFIRMED** (byte-identical re-extraction; 72-line large advice ties
+on all 3 money columns to the printed grand total). Three findings **fixed** (commit 3075d34):
+split paid/open anchor (6 invoices 'paid' with open>0 → both anchor on ns_amount); 418 credit-settled
+invoices mislabeled 'paid' → new `credited` status; circular cash-tie proof → independent
+detail-vs-header tie. Known limitations documented: the remittance checksum is a sum-check not a
+completeness check (a hypothetical $0.00 dropped line could pass — no real invoice line is $0.00);
+`is_claim` is evaluated before match, so an LJ line carrying a real FT number would bucket as claim
+(none today). One data note: NS `FT009228` references an FT number with no landed ft_invoice.
+
+## Follow-ups / deferred
+- **Woolworths + ALDI remittance parsers** — need their sample files/formats (per-retailer pluggable).
+- **Auto-ingestion channel** (email/SFTP/portal) — loader consumes a file/dir for now.
+- **Cube exposure of AR metrics** — after sign-off. **Revenue-class wiring** — still awaiting Tim's CSV.
+
 # Handoff (2026-07-11): Warehouse closeout — dims, cross-source tie, governance, MCP, freshness
 
 Status: **✅ ALL SEVEN CHUNKS DONE — full proof battery green on fresh data.** Migrations

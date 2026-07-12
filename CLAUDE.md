@@ -218,6 +218,36 @@ read-replica** (the first non-GraphQL ingress). Same medallion + `app_metadata` 
   persist Tim's marking through rebuilds (seed table or classifier rules re-applied in the loader),
   never a one-off UPDATE.
 
+## Accounts receivable — customer invoices + remittance reconciliation (AR sprint, 2026-07-12)
+The **receivable mirror** of grower settlement. INTERNAL-ONLY throughout (customer book is
+commercially sensitive; no grower RLS). Two sources land the same money: FreshTrack = invoice ORIGIN
+(dispatch/order lineage), NetSuite = debtor/cash STATUS. READ-ONLY out of both — never write.
+- **Landing (0037/0038/0039):** `raw.ft_invoice` + `raw.ft_dispatch_load_invoice` (FreshTrack replica,
+  `ft:invoice:load`, 1 load/invoice) · `raw.ns_customer_invoice`/`_line`/`_payment`/`_credit` +
+  `ns_ar_apply_link` + `ns_customer` (SuiteQL, `ns:ar:load`, subsidiary-2 scope) · `raw.remittance` +
+  `raw.remittance_line` (`remit:load`). All raw = etl-only posture.
+- **THE CROSSWALK is `ns_customer_invoice.externalid = ft_invoice.invoice_no` (FTxxxxx)** — deterministic
+  (NOT `ext_link`, which is sparse on recent invoices). FreshTrack `payment_status` is STALE (PB on
+  already-paid invoices) — **paid status comes from NetSuite**: apply-link
+  (`ns_ar_apply_link`, previoustype CustInvc) → CustPymt gives paid_amount + paid_date, CustCred gives
+  credits. ⚠ the AR apply-link synthetic key needs **linktype+nexttype** (a CustInvc line links to both
+  a payment AND a credit with the same doc/line numbers — the RCTI 4-part key collides on AR).
+- **Core (0040):** `core.fact_customer_invoice` (invoice grain, customer AR = invoice_type IN
+  PI/SI/CN/DR — RCTI excluded; paid_status paid[has cash]/credited[credit-memo only]/part/unpaid/
+  no_ns_match; paid_status + open_amount BOTH anchor on coalesce(ns_amount,amount_value)) + `core.fact_remittance_line`
+  (Coles line reconciled to the invoice by **literal** invoice_no — NEVER strip a suffix, FT003402A ≠
+  FT003402; recon_status matched/amount_mismatch/claim/unmatched). `ar:core`.
+- **Coles remittance = text PDF** (pure parser `src/lib/remittance_coles.ts`, PDF→text via pypdf in the
+  loader; checksum Σ line payment = header total). Line = `Invoice/Claim No | Doc Type KD/LJ | Date |
+  Store (C+b2b_code) | Document$ | Discount$ (Coles 2.5% = the retail rebate) | Payment$ | GST | WT`.
+  Claims (LJ / REV… / bare numbers) match no invoice = the deductions bucket. **Woolworths/ALDI parsers
+  + auto-ingestion channel are DEFERRED** (need samples / channel); the parser is per-retailer pluggable.
+- **Semantic (0041, internal-only, security_invoker):** `ar_customer_invoice`, `ar_debtor_open` (aged
+  open receivables), `ar_remittance_reconciliation` (the discrepancy report — the headline surface).
+- **Proofs (runnable):** `npm run ar:reconcile` (landing parity + NS↔FT crosswalk + cash tie Σ
+  paid==Σ applied CustPymt, all derived in-run) · `npm run remit:reconcile` (checksum + recon buckets +
+  2.5% discount; report committed) · `npm run ar:rls` (internal-only fail-closed, 2 facts + 3 views).
+
 ## Stack
 - TypeScript (ESM, Node ≥ 22 — run `.ts` directly via `--experimental-strip-types`).
 - Supabase Postgres 17 (`data_hub`). Loaders write via `pg` (direct), never PostgREST.
