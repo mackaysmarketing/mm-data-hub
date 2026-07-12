@@ -23,7 +23,7 @@
 //   • Section-embedded repeats of the two header lines (page repeats in larger exports) are
 //     skipped — but only if they match the expected signature exactly; otherwise: drift → throw.
 //   • channelChecksum: the verified invariant In store + Online == TOTAL per (product, time)
-//     for unit_sales / dollar_sales / volume_sales (Current), within max(0.02, |total|·1e-9).
+//     for unit_sales / dollar_sales / volume_sales (Current), within max(0.005, |total|·1e-9).
 //     (product, time) groups lacking any of the three causals are skipped, not mismatches.
 //     The checksum is total/pure (returns mismatches, never throws); the loader enforces.
 
@@ -346,7 +346,7 @@ export interface ChannelChecksumMismatch {
 }
 
 /** Assert In store + Online == TOTAL per (product, time_label) for unit/dollar/volume sales
- *  (Current), within max(0.02, |total|·1e-9). Groups lacking any of the three causals are
+ *  (Current), within max(0.005, |total|·1e-9). Groups lacking any of the three causals are
  *  skipped (not mismatches), and so is a MEASURE whose value is null on any leg — data absence is
  *  not an additivity violation (the manufacturer-split export legitimately carries nulls on thin
  *  manufacturer×state cells; observed 432 null unit_sales rows). Skips are counted in `incomplete`
@@ -383,7 +383,7 @@ export function channelChecksum(section: ScanSection): {
       const o = online.measures[measure];
       if (t == null || i == null || o == null) { groupIncomplete = true; continue; } // null leg → not assertable
       const sum = i + o;
-      const tolerance = Math.max(0.02, Math.abs(t) * 1e-9);
+      const tolerance = Math.max(0.005, Math.abs(t) * 1e-9); // sub-cent floor: source is exactly additive (adversarial review — 0.02 could never catch a 1-cent corruption)
       if (!(Math.abs(sum - t) <= tolerance)) {
         mismatches.push({
           product: total.product,

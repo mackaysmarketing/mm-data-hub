@@ -15,11 +15,15 @@
 //      user_metadata all → 0 on the fact + the semantic view.
 //   Writes reports/retail_scan_reconcile_<date>.md. Exit 0 = all hard checks pass.
 // ─────────────────────────────────────────────────────────────────────────────
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { mkdirSync, writeFileSync, readdirSync, readFileSync, existsSync } from 'node:fs';
+import { join, basename } from 'node:path';
 import type { PoolClient } from 'pg';
 import { makePool } from '../src/lib/db.ts';
-import { SCAN_MEASURE_COLUMNS } from '../src/lib/retail_scan_coles.ts';
+import { SCAN_MEASURE_COLUMNS, parseColesScanCsv } from '../src/lib/retail_scan_coles.ts';
 import { isMain } from '../src/lib/util.ts';
+
+const SOURCE_DIR = 'C:/Users/timwi/Downloads';
+const SOURCE_PATTERN = /^Weekly Sales \(Scan\)_SUP.*\.csv$/i;
 
 const results: { name: string; pass: boolean }[] = [];
 const report: string[] = [];
@@ -61,6 +65,35 @@ async function main(): Promise<void> {
     check('every SCAN_MEASURE_COLUMNS name is a numeric raw column',
       missing.length === 0, missing.length ? `MISSING: ${missing.join(', ')}` : `${SCAN_MEASURE_COLUMNS.length}/57 present`);
 
+    // 1b. INDEPENDENT source re-parse parity (adversarial review: the loader's own parse is the
+    // same code path that landed the rows — this re-parse from the source files is the check that
+    // catches a parse-and-land bug that is self-consistent). Runs only where the exports exist;
+    // SKIPPED LOUDLY otherwise (the DB-side checks below still run everywhere).
+    console.log('\n--- 1b. Source re-parse parity ---');
+    const srcFiles = existsSync(SOURCE_DIR)
+      ? readdirSync(SOURCE_DIR).filter((f) => SOURCE_PATTERN.test(f)).map((f) => join(SOURCE_DIR, f))
+      : [];
+    if (srcFiles.length === 0) {
+      const note = `SKIP  source re-parse parity — no exports matching ${SOURCE_PATTERN} in ${SOURCE_DIR} (DB-side checks below still run)`;
+      console.log(note); report.push(note);
+    } else {
+      const keys = new Set<string>();
+      let parsedRows = 0;
+      for (const f of srcFiles) {
+        const p = parseColesScanCsv(readFileSync(f, 'utf8'), basename(f));
+        for (const s of p.sections) {
+          for (const r of s.rows) {
+            parsedRows += 1;
+            keys.add(['coles', s.geography, r.product, r.time_label, r.causal].join('|'));
+          }
+        }
+      }
+      const rawCount = (await c.query<{ n: string }>(`select count(*)::text n from raw.retail_scan`)).rows[0]!.n;
+      check('re-parsed distinct natural keys == raw.retail_scan rows',
+        String(keys.size) === rawCount,
+        `files=${srcFiles.length} parsed_rows=${parsedRows} distinct_keys=${keys.size} raw=${rawCount}`);
+    }
+
     // 2. core parity
     console.log('\n--- 2. Core parity (weekly grain) ---');
     const p = (await c.query(
@@ -88,11 +121,11 @@ async function main(): Promise<void> {
            from core.fact_retail_scan group by 1, 2, 3, 4)
        select count(*)::text as groups,
               count(*) filter (where u_t is not null and u_i is not null and u_o is not null
-                                 and abs((u_i + u_o) - u_t) > greatest(0.02, abs(u_t) * 1e-9))::text as units_bad,
+                                 and abs((u_i + u_o) - u_t) > greatest(0.005, abs(u_t) * 1e-9))::text as units_bad,
               count(*) filter (where d_t is not null and d_i is not null and d_o is not null
-                                 and abs((d_i + d_o) - d_t) > greatest(0.02, abs(d_t) * 1e-9))::text as dollars_bad,
+                                 and abs((d_i + d_o) - d_t) > greatest(0.005, abs(d_t) * 1e-9))::text as dollars_bad,
               count(*) filter (where v_t is not null and v_i is not null and v_o is not null
-                                 and abs((v_i + v_o) - v_t) > greatest(0.02, abs(v_t) * 1e-9))::text as volume_bad
+                                 and abs((v_i + v_o) - v_t) > greatest(0.005, abs(v_t) * 1e-9))::text as volume_bad
          from piv`)).rows[0]!;
     show([cs]);
     check('0 checksum mismatches across units/dollars/volume',
@@ -129,6 +162,11 @@ async function main(): Promise<void> {
     check('NULLs preserved raw→fact (volume, acv)',
       nulls.raw_vol_nulls === nulls.fact_vol_nulls && nulls.raw_acv_nulls === nulls.fact_acv_nulls,
       `vol ${nulls.raw_vol_nulls}==${nulls.fact_vol_nulls}, acv ${nulls.raw_acv_nulls}==${nulls.fact_acv_nulls}`);
+    // the raw↔fact null comparison cannot catch a PARSER-level ''→0 coalesce (both sides would
+    // agree); this independent shape check can (adversarial review): sold units with zero kg is
+    // physically impossible for bananas, so any ''→0 coercion upstream would surface here.
+    check('0 suspicious zero-volume rows (independent coalesce guard)',
+      nulls.suspicious_zero_vol === '0', `volume_kg=0 with units>0: ${nulls.suspicious_zero_vol}`);
 
     // 6. informational ties
     console.log('\n--- 6. Ties (informational, tolerance — the source is not forced additive here) ---');
