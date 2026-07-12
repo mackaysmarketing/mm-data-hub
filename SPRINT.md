@@ -1,89 +1,95 @@
-# Sprint: Retail scan ingestion — Coles weekly sell-through (Circana supplier export)
+# Sprint: Insight layer — cross-domain marts + the business-language (NL) foundation
 Date: 2026-07-12
 Repo: mm-data-hub
 
-## Why
-The demand signal: actual units/kg/dollars sold through Coles checkouts, weekly, by state and banana
-segment — turning "what's on the shelf at what price" (raw.retail_prices, landed) into "what's
-actually selling". Named in SPEC §1 as the planned "retail scan (IRI/Quantium)" source. Tim supplied
-the first real export 2026-07-12; build as much as possible autonomously from it.
+## Part 1 — the schema-value review (the findings this sprint implements)
+The hub now lands EIGHT domains that have never been JOINED analytically. Each domain is proven
+internally; the untapped value is at the intersections. Review conclusions (verified feasible
+against live data 2026-07-12):
 
-## Ground truth (profiled live from the sample, 2026-07-12 — the design rests on these)
-- **File:** `Weekly Sales (Scan)_SUP*.csv` — a Circana/IRI-style supplier export from Coles (7.5MB,
-  5,345 lines). ASCII CSV, scientific-notation floats (8.7783691936E7), empty string = null.
-- **Multi-section:** 7 sections, one per GEOGRAPHY — `All Geography by Coles Supermarkets` (national)
-  + NSW+ACT, QLD, SA+NT, TAS, VIC, WA. Each section = 5 metadata lines (title, Geography:,
-  Manufacturer:, Brand:, SubBrand: — all COLES SUPERMARKET own-brand) + 2 header lines + data rows.
-- **Row grain:** Product × Time × Causal. Product = banana category total (`BANANAS`) + 4 segments
-  (`REGULAR BANANAS-BANANAS`, `PRE PACK BANANAS-BANANAS`, `LADY FINGER-BANANAS`,
-  `OTHER BANANAS-BANANAS`). NO EAN/article — category-level scan, no SKU crosswalk. Causal =
-  TOTAL / In store / Online. Time = 52 weekly rows `W/E DD-MM-YY` (rolling window ending 07-07-26)
-  + 3 aggregates `Latest 52|4|1 W/E 07-07-26`.
-- **Measures:** 19 × 5 variants (Current, % Change vs YA, Change vs YA, Year Ago, % Change vs 2 YA)
-  = 95 numeric cols + 3 id cols = 98. Measures: Unit/Volume/Dollar Sales, Price Per Unit/Volume,
-  Avg Weekly ACV Distribution, % Stores, Avg Weekly $/Units/Volume per Store Selling,
-  Dollar/Unit/Volume Share of Parent, Base + Incremental Dollar/Unit/Volume (the promo split).
-- **Verified invariant (the checksum): In store + Online == TOTAL exactly (275/275 sampled, 0 fail).**
-  Segment shares ("Share of Parent") and state-vs-national sums are secondary tie checks (tolerance).
-- **Derivability:** `Change vs YA` = current − year_ago and `% Change vs YA` = change/year_ago are
-  PURE derivations → not landed. `% Change vs 2 YA` embeds the 2-years-ago value (not otherwise
-  present) → landed. So raw lands 3 variants × 19 measures = 57 numeric columns.
-- **Join to the hub:** by week (`week_ending` → core.dim_date → pack_week_code — ties scan weeks to
-  pack weeks/dispatch), by state (aligns with raw.retail_prices state + market areas), by retailer
-  (coles → dim_customer's Coles consignees at state level, loosely). Segment↔product is category-level
-  only (documented, not forced).
+**The insight gaps, ranked:**
+1. **Demand vs supply (“our share of the till”)** — `fact_retail_scan` gives Coles’s TOTAL banana
+   sell-through (kg/units/$ by week × state × segment); dispatch gives OUR shipments into Coles DCs.
+   Nobody can currently answer “what share of what Coles sold did we supply, and are we over/under-
+   shipping demand?” Feasible: consignee names map cleanly to retailer×state (Coles Melbourne → VIC…),
+   products map to scan segments (variety/pack_type → REGULAR/PRE_PACK/LADY_FINGER/OTHER), kg from
+   `dim_product.net_weight_value` × boxes.
+2. **The price ladder (farm gate → wholesale → shelf → till)** — four price points exist in four
+   domains and are never lined up: GP `price_invoiced_value`/kg (what the grower got), bridge/order
+   sell $/kg (what we invoiced the retailer), `retail_prices` (shelf), scan `price_per_volume`
+   (realised till $/kg). Price transmission + margin stack per week × segment: NOVEL, high value.
+3. **Customer margin** — AR gives revenue per customer; the settlement bridge gives the grower cost
+   of that fruit per consignee. Joined at customer × month = gross margin by customer (freight cost
+   to layer in later when that domain lands).
+4. **Grower scorecard** — per grower × month: volume, net return, price achieved vs pool average,
+   bridge variance, payment lag. All landed; never assembled.
+5. **Supplier share (competitive)** — the scan manufacturer-split already carries FRESHMAX,
+   PERFECTION FRESH, ROCK RIDGE, PRIVATE LABEL… share within Coles by segment/week. Pure derivation.
+6. *(Planned-data extensions, NOT this sprint: freight cost-to-serve joins #3 when landed; SOH ages
+   against demand; harvest lineage extends the ladder to the block. Designed-for, not built.)*
 
-## Scope
-1. **Parser** `src/lib/retail_scan_coles.ts` — PURE `parseColesScanCsv(text, sourceFile)`: split
-   sections on the title line, read Geography/Manufacturer/Brand/SubBrand, assert the 98-col header
-   signature (FAIL LOUDLY on drift), parse rows (scientific notation → number, '' → null), return
-   sections+rows with named measures (57 per row: current/_ya/_pct_2ya per measure). Unit tests over
-   a committed trimmed fixture (tests/fixtures/retail_scan/) + adversarial cases. The channel-additivity
-   checksum exported as a helper (assert In store + Online == TOTAL per product×time within a section).
-2. **Raw (0042):** `raw.retail_scan` — wide, natural key
-   (retailer, geography, product, time_label, causal) as a synthesized text PK; verbatim id columns +
-   the 57 measure columns + manufacturer/brand/subbrand + source_file + _synced_at. etl-only posture.
-   `time_label` verbatim (derivations happen in core).
-3. **Loader** `src/loaders/retail_scan.ts` (`scan:load`) — file/dir args (default: the Downloads
-   export pattern), parse → enforce the channel checksum → idempotent upsert. Weekly re-drops of the
-   rolling window simply upsert (revisions win).
-4. **Core (0043):** `core.fact_retail_scan` (`scan:core`) — weekly grain only (period_type='week'):
-   week_ending date (parsed from `W/E DD-MM-YY`), geography_code (AU / NSW+ACT / QLD / SA+NT / TAS /
-   VIC / WA), segment (ALL / REGULAR / PRE_PACK / LADY_FINGER / OTHER), causal (total/in_store/online),
-   is_category_total; measures: units, dollars, volume_kg + _ya counterparts, price_per_unit,
-   price_per_volume, acv_distribution, pct_stores, base/incremental dollars+units+volume.
-   `Latest N` aggregate rows stay in raw only (derivable). INTERNAL-ONLY RLS + cube (0040 pattern).
-5. **Semantic (0044):** `semantic.retail_scan` — security_invoker, internal-only; the weekly surface
-   + dim_date join (pack_week_code, iso year/week) so scan weeks tie to pack weeks.
-6. **Posture registry** — raw.retail_scan (etl-only), core.fact_retail_scan (internal-only),
-   semantic.retail_scan (semantic-invoker).
-7. **Proofs** `scripts/retail_scan_reconcile.ts` (`scan:reconcile`) — ALL derived in-run:
-   (a) landing parity: raw rows == re-parsed source rows; (b) core parity: fact == raw week rows;
-   (c) channel checksum: in_store + online == total on every (week, geo, product) for units/dollars/
-   volume (0 mismatches); (d) state-vs-national + segment-vs-category ties (tolerance, informational);
-   (e) NULL preservation; (f) internal-only RLS behavioral (internal>0; grower/no-claim/forged = 0).
-8. Battery re-run + adversarial verify + HANDOFF/CLAUDE.md + commit.
+**Alignment findings that shape the design:** scan weeks end TUESDAY (W/E 07-07-26); dispatch/GP
+use dates → align by date-range membership into the scan week (week_ending−6 .. week_ending),
+NEVER by ISO-week equality. Internal transfer + test consignees (MM Truganina, Truganina Test)
+must be excluded from retail supply measures. Value-added (Processed Banana) is out of scan scope.
+
+## Part 1 scope — build
+1. **0045 crosswalks:** `core.crosswalk_customer_retail` (consignee → retailer_group + state_code,
+   name-rule + DC-city lookup, method + unmapped surfaced) · `core.crosswalk_product_segment`
+   (product → banana segment via variety/pack_type/organic rules; non-banana + value-added flagged
+   out-of-scope). Both refresh-function built, both proven for coverage.
+2. **0046 mart:** `core.fact_market_week` — grain week_ending (from scan) × retailer_group × state ×
+   segment: scan demand (kg/units/$/till price/promo split) + our supply into that cell (boxes, kg,
+   sell $ via bridge) + farm-gate $/kg (GP, pack_date-aligned) + our_share_kg. Refresh via the
+   temp-table pattern.
+3. **0047 semantic (all INTERNAL-ONLY):** `semantic.market_week` (+ ladder + share + transmission
+   derivations, null-safe) · `semantic.customer_margin` (customer × month: AR revenue vs grower
+   cost vs deductions retained) · `semantic.grower_scorecard` (grower × month, is_internal-gated —
+   pool comparisons must not be computed over a grower’s own-rows-only view) ·
+   `semantic.retail_supplier_share` (scan mfr split shares).
+4. **Proofs `insight:reconcile`:** crosswalk coverage (≥95% of Coles/WOW/ALDI volume mapped;
+   ≥95% banana pallets segment-mapped), mart parity BOTH sides derived in-run (scan side == fact_
+   retail_scan; supply side == pallet sums in scope), share sanity (0 < our_share ≤ 1.05 on Coles
+   cells), ladder ordering (farm ≤ wholesale ≤ till, informational), RLS behavioral. Posture
+   registry additions; battery green.
+
+## Part 2 — the natural-language (NL) foundation + engagement
+Goal: agents and BI answering questions in MACKAYS language (“cavs to Coles Melbourne”, “week 31”,
+“lady fingers”, “the majors”, “Jon’s growers”) — a translation layer from business vocabulary to
+hub entities/metrics. This sprint builds the FOUNDATION + the engagement that harvests Tim’s
+vocabulary; wiring into the MCP catalog follows once his input returns.
+1. **0048 schema:** `core.business_term` (entity_type × entity_key × alias grain; canonical name,
+   source [seed|tim|derived], notes) + `core.nl_phrase` (free-form phrase → meaning/mapping for
+   metrics, time expressions, units, roles). Internal-only semantic view `semantic.business_glossary`.
+   Seeded from the hub itself (canonical names + obvious derivations e.g. grower codes, segment
+   names, geography codes) so the engine has a base layer even before Tim’s input.
+2. **The engagement tool** (`nl:tool` → reports/nl_glossary_<date>.html, the revenue-marker UX):
+   pre-populated with EVERY hub entity — products (with attributes), customers (with retailer/state),
+   growers, sheds, segments, geographies, charge categories, metric definitions — each with alias +
+   notes inputs; plus guided free-form sections (units of speech, time vocabulary, people/roles,
+   “top questions you’d ask in plain English”). localStorage autosave; exports a JSON Tim sends back.
+3. **`nl:load`** — lands the returned JSON into 0048 (idempotent, source='tim').
 
 ## Acceptance Criteria
-- [ ] Parser unit-tested (fixture committed); header-drift fails loudly; 0 silent numeric coercions.
-- [ ] raw.retail_scan landed from the real export: 7 sections, counts pasted; idempotent re-run = 0 net-new.
-- [ ] core.fact_retail_scan weekly grain: counts pasted; week_ending/geography/segment parses clean.
-- [ ] scan:reconcile green with pasted evidence incl. the channel checksum at 0 mismatches.
-- [ ] rls:posture green with the 3 new relations; internal-only proven behaviorally.
-- [ ] Existing battery + typecheck + tests green; HANDOFF/CLAUDE.md updated; committed.
+- [ ] Crosswalk coverage pasted (retail volume ≥95% mapped; banana pallets ≥95% segment-mapped;
+      unmapped listed, never dropped).
+- [ ] fact_market_week built; parity pasted (scan side + supply side, both derived in-run);
+      our_share sane on every Coles cell; ladder populated (farm/wholesale/till non-null on the
+      majority of REGULAR × VIC/QLD cells).
+- [ ] 4 semantic views live, internal-only proven behaviorally; posture registry green (expected 87).
+- [ ] insight:reconcile green with pasted evidence; existing battery + tests + typecheck green.
+- [ ] NL schema landed + seeded; the engagement HTML generated from live hub data, verified in a
+      browser (chips/autosave/export), delivered to Tim with a clear ask.
+- [ ] Docs (CLAUDE.md + HANDOFF) updated; committed.
 
 ## Deferred (with reason)
-- **Woolworths scan** (and any second retailer) — need their export format; parser is per-retailer
-  pluggable like the remittance parsers.
-- **SKU-level scan / EAN crosswalk** — this export is category-level; no SKU data present.
-- **Auto-ingestion channel** (portal fetch/email) — loader takes files for now; channel TBD with Tim.
-- **Cube exposure** — after definitions are signed off.
-- **2-years-ago backcast** (derivable from pct_2ya) — landed raw; modeling deferred until wanted.
+- MCP/Cube wiring of the marts + glossary — after Tim’s vocabulary returns and definitions settle.
+- Freight/SOH/harvest joins into the mart — those domains aren’t landed yet (designed-for).
+- Woolworths/ALDI scan + remittance parsers — awaiting samples.
 
 ## Goal Condition
-/goal Retail scan ingestion complete per SPRINT.md 2026-07-12: Coles Circana export parsed (pure,
-unit-tested, header-drift-loud), raw.retail_scan + core.fact_retail_scan + semantic.retail_scan
-landed and refreshed from the real export (0042/0043/0044), posture registry green at 78/78,
-scan:reconcile green incl. the in_store+online==total checksum at 0 mismatches, existing battery +
-tests + typecheck green, docs updated, committed. READ-ONLY sources; internal-only RLS fail-closed
-proven. Stop after 40 turns.
+/goal The insight layer + NL foundation is built per SPRINT.md 2026-07-12b: crosswalks proven at
+≥95% coverage, fact_market_week + 4 internal-only semantic views live with insight:reconcile green
+(both-sides-derived parity, share sanity, RLS behavioral), posture green, battery green, NL schema
+(0048) seeded, and the pre-populated vocabulary engagement tool generated from live hub data,
+browser-verified, and delivered to Tim. Docs updated, committed. Stop after 45 turns.
