@@ -1,0 +1,140 @@
+The amount to be deposited as per the above details is for settlement of the documents listed below.
+Supplier Master File
+For any changes to your bank details, postal address, contact details, please submit via logging into Coles Supplier Portal https://www.supplierportal.coles.com.au/wps/portal or if
+you do not use Coles Supplier Portal, please email any changes to supplier.masterfile@coles.com.au. A confirmation letter will be sent to you when there is a change made in bank
+account details in Coles system.
+To request previously issued remittance advices, please obtain via logging into Coles Supplier Portal Link:  https://www.supplierportal.coles.com.au/wps/portal or if you do not use
+Coles Supplier Portal, please email any remittance requests to supplier.masterfile@coles.com.au
+Accounts Investigation
+Please raise an account query if you: require claim copies, dispute aclaim, or enquire about an overdue invoice relating to this payment number.
+For Coles Supplier Portal Users, please refer to Coles Supplier Central Portal under: Help Centre - Claims and Remittances or Invoice, Payments and Transactions.
+https://suppliercentral.coles.com.au/s/
+For Non-Coles Supplier Portal Users,please email accounts.investigation@coles.com.au
+Statements (not payable invoice/statement) can be emailed to: Colesaudit@coles.com.au
+________________________________________________________________________
+Invoice / Claim Doc. Doc. Store Document Discount Payment GST WT
+Adjustment No. Reference Type Date No. $Amount $Amount $Amount $Amount $Amount
+________________________________________________________________________
+Coles Supermarkets ABN: 45 004 189 708
+FT013416                   KD 17.06.2026 C9415FV        2,380.00           59.50        2,320.50            0.00         0.00
+FT013409                   KD 17.06.2026 C9247FV        2,288.00           57.20        2,230.80            0.00         0.00
+FT013415                   KD 17.06.2026 C9314FV        2,080.00           52.00        2,028.00            0.00         0.00
+FT013411                   KD 17.06.2026 C9314FV        7,776.00          194.40        7,581.60            0.00         0.00
+FT013418                   KD 17.06.2026 C9745FV        4,884.00          122.10        4,761.90            0.00         0.00
+FT013419                   KD 17.06.2026 C9424FV       16,837.56          420.94       16,416.62            0.00         0.00
+FT013413                   KD 17.06.2026 C9314FV       12,715.50          317.89       12,397.61            0.00         0.00
+FT013414                   KD 17.06.2026 C9314FV       52,755.80        1,318.90       51,436.90            0.00         0.00
+FT013410                   KD 17.06.2026 C9314FV       55,745.80        1,393.65       54,352.15            0.00         0.00
+FT013417                   KD 17.06.2026 C9541FV       18,047.10          451.18       17,595.92            0.00         0.00
+FT013412                   KD 17.06.2026 C9314FV       54,832.80        1,370.82       53,461.98            0.00         0.00
+FT013473                   KD 18.06.2026 C9314FV        2,080.00           52.00        2,028.00            0.00         0.00
+FT013474                   KD 18.06.2026 C9314FV        2,160.00           54.00        2,106.00            0.00         0.00
+FT013471                   KD 18.06.2026 C9415FV        2,160.00           54.00        2,106.00            0.00         0.00
+FT013479                   KD 18.06.2026 C9745FV        2,442.00           61.05        2,380.95            0.00         0.00
+FT013470                   KD 18.06.2026 C9424FV       25,415.00          635.38       24,779.62            0.00         0.00
+FT013472                   KD 18.06.2026 C9247FV        2,652.00           66.30        2,585.70            0.00         0.00
+FT013478                   KD 18.06.2026 C9541FV       44,569.20        1,114.23       43,454.97            0.00         0.00
+FT013476                   KD 18.06.2026 C9314FV       57,175.48        1,429.39       55,746.09            0.00         0.00
+FT013475                   KD 18.06.2026 C9314FV       49,848.00        1,246.20       48,601.80            0.00         0.00
+FT013477                   KD 18.06.2026 C9314FV       61,699.32        1,542.48       60,156.84            0.00         0.00
+MACKAY'S BANANA MARKETING CO PTY LT
+IN TRUST FOR MACKAY'S BANANA MARKET
+PO Box 513
+TULLY QLD 4854
+ABN: 36 841 089 158
+Vendor No.: 6007716
+Payment No.: 3300004309
+BANK ACCOUNT NO.: 084-004 755017134
+Page: 1 of    3
+Period Ending: 06.07.2026
+Total Amount: $1,898,521.87 
+Remittance Advice - Coles Group Limited
+Adjustment Note
+ABN: 11 004 089 936
+________________________________________________________________________
+Invoice / Claim Doc. Doc. Store Document Discount Payment GST WT
+Adjustment No. Reference Type Date No. $Amount $Amount $Amount $Amount $Amount
+________________________________________________________________________
+FT013512                   KD 19.06.2026 C9415FV        2,700.00           67.50        2,632.50            0.00         0.00
+FT013513                   KD 19.06.2026 C9314FV        2,224.00           55.60        2,168.40            0.00         0.00
+FT013514                   KD 19.06.2026 C9314FV        2,160.00           54.00        2,106.00            0.00         0.00
+FT013521                   KD 19.06.2026 C9745FV        2,442.00           61.05        2,380.95            0.00         0.00
+FT013519                   KD 19.06.2026 C9314FV        3,888.00           97.20        3,790.80            0.00         0.00
+FT013511                   KD 19.06.2026 C9424FV       26,308.60          657.72       25,650.88            0.00         0.00
+FT013516                   KD 19.06.2026 C9314FV       54,334.32        1,358.36       52,975.96            0.00         0.00
+FT013518                   KD 19.06.2026 C9314FV       50,468.80        1,261.72       49,207.08            0.00         0.00
+FT013515                   KD 19.06.2026 C9314FV       57,549.12        1,438.73       56,110.39            0.00         0.00
+FT013517                   KD 19.06.2026 C9314FV       58,322.16        1,458.05       56,864.11            0.00         0.00
+FT013520                   KD 19.06.2026 C9541FV       57,760.20        1,444.01       56,316.19            0.00         0.00
+FT013560                   KD 22.06.2026 C9314FV        2,080.00           52.00        2,028.00            0.00         0.00
+FT013576                   KD 22.06.2026 C9314FV        2,160.00           54.00        2,106.00            0.00         0.00
+FT013562                   KD 22.06.2026 C9314FV        3,888.00           97.20        3,790.80            0.00         0.00
+FT013582                   KD 22.06.2026 C9745FV        2,442.00           61.05        2,380.95            0.00         0.00
+FT013558                   KD 22.06.2026 C9415FV        2,184.00           54.60        2,129.40            0.00         0.00
+FT013556                   KD 22.06.2026 C9424FV       23,477.00          586.93       22,890.07            0.00         0.00
+FT013559                   KD 22.06.2026 C9247FV        2,652.00           66.30        2,585.70            0.00         0.00
+FT013568                   KD 22.06.2026 C9314FV        3,888.00           97.20        3,790.80            0.00         0.00
+FT013581                   KD 22.06.2026 C9745FV        4,884.00          122.10        4,761.90            0.00         0.00
+FT013569                   KD 22.06.2026 C9314FV       33,662.00          841.55       32,820.45            0.00         0.00
+FT013557                   KD 22.06.2026 C9424FV       33,407.70          835.19       32,572.51            0.00         0.00
+FT013555                   KD 22.06.2026 C9424FV       34,867.47          871.69       33,995.78            0.00         0.00
+FT013575                   KD 22.06.2026 C9314FV       38,681.52          967.04       37,714.48            0.00         0.00
+FT013577                   KD 22.06.2026 C9314FV       47,023.28        1,175.58       45,847.70            0.00         0.00
+FT013563                   KD 22.06.2026 C9314FV       40,322.50        1,008.06       39,314.44            0.00         0.00
+FT013574                   KD 22.06.2026 C9314FV       46,920.00        1,173.00       45,747.00            0.00         0.00
+FT013580                   KD 22.06.2026 C9541FV       44,429.10        1,110.73       43,318.37            0.00         0.00
+FT013579                   KD 22.06.2026 C9541FV       44,569.20        1,114.23       43,454.97            0.00         0.00
+FT013566                   KD 22.06.2026 C9314FV       54,334.32        1,358.36       52,975.96            0.00         0.00
+FT013567                   KD 22.06.2026 C9314FV       51,343.44        1,283.59       50,059.85            0.00         0.00
+FT013571                   KD 22.06.2026 C9314FV       54,832.80        1,370.82       53,461.98            0.00         0.00
+FT013572                   KD 22.06.2026 C9314FV       54,334.32        1,358.36       52,975.96            0.00         0.00
+FT013565                   KD 22.06.2026 C9314FV       54,334.32        1,358.36       52,975.96            0.00         0.00
+FT013564                   KD 22.06.2026 C9314FV       54,832.80        1,370.82       53,461.98            0.00         0.00
+FT013561                   KD 22.06.2026 C9314FV       56,826.72        1,420.67       55,406.05            0.00         0.00
+FT013573                   KD 22.06.2026 C9314FV       57,789.92        1,444.75       56,345.17            0.00         0.00
+FT013570                   KD 22.06.2026 C9314FV       59,817.60        1,495.44       58,322.16            0.00         0.00
+FT013636                   KD 23.06.2026 C9247FV        1,976.00           49.40        1,926.60            0.00         0.00
+FT013644                   KD 23.06.2026 C9745FV        2,442.00           61.05        2,380.95            0.00         0.00
+FT013635                   KD 23.06.2026 C9415FV        2,160.00           54.00        2,106.00            0.00         0.00
+FT013639                   KD 23.06.2026 C9314FV        9,504.00          237.60        9,266.40            0.00         0.00
+FT013642                   KD 23.06.2026 C9314FV        2,392.00           59.80        2,332.20            0.00         0.00
+FT013643                   KD 23.06.2026 C9541FV        4,996.20          124.91        4,871.29            0.00         0.00
+FT013638                   KD 23.06.2026 C9314FV       29,210.40          730.26       28,480.14            0.00         0.00
+FT013634                   KD 23.06.2026 C9424FV       22,782.80          569.57       22,213.23            0.00         0.00
+FT013637                   KD 23.06.2026 C9314FV       18,800.00          470.00       18,330.00            0.00         0.00
+FT013641                   KD 23.06.2026 C9314FV       49,848.00        1,246.20       48,601.80            0.00         0.00
+FT013640                   KD 23.06.2026 C9314FV       54,832.80        1,370.82       53,461.98            0.00         0.00
+FT013578                   KD 22.06.2026 C9541FV       44,569.20        1,114.23       43,454.97            0.00         0.00
+Vendor No.: 6007716
+Payment No.: 3300004309
+BANK ACCOUNT NO.: 084-004 755017134
+Page: 2 of    3
+Period Ending: 06.07.2026
+Total Amount: $1,898,521.87 
+Remittance Advice - Coles Group Limited
+Adjustment Note
+ABN: 11 004 089 936
+________________________________________________________________________
+Invoice / Claim Doc. Doc. Store Document Discount Payment GST WT
+Adjustment No. Reference Type Date No. $Amount $Amount $Amount $Amount $Amount
+________________________________________________________________________
+1295067                   LJ 26.06.2026 C9541FV -4,996.20 -124.91 -4,871.29            0.00         0.00
+________________________________________________________________________
+Total for Coles Supermarkets    1,947,201.97       48,680.10    1,898,521.87            0.00            0.00
+________________________________________________________________________
+Vendor No.: 6007716
+Payment No.: 3300004309
+BANK ACCOUNT NO.: 084-004 755017134
+Withholding tax payment summary will be forwarded at the end of the month.
+Page: 3 of    3
+Period Ending: 06.07.2026
+Total Amount: $1,898,521.87 
+Remittance Advice - Coles Group Limited
+Adjustment Note
+ABN: 11 004 089 936
+________________________________________________________________________
+Payment No. Document Settlement Payment GST WT
+$Amount Discount $Amount $Amount $Amount
+3300004309    1,947,201.97       48,680.10    1,898,521.87            0.00            0.00
+*** GST Adjustment            0.00 (Included in Settlement Discount)
+________________________________________________________________________

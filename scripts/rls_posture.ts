@@ -105,6 +105,17 @@ const REGISTRY: Record<string, RegistryEntry> = {
   'raw.ft_crop':                 { cls: 'etl-only', pending: true, why: 'SPRINT C1' },
   'raw.ft_variety':              { cls: 'etl-only', pending: true, why: 'SPRINT C1' },
   'raw.ft_pack_type':            { cls: 'etl-only', pending: true, why: 'SPRINT C1' },
+  // ── raw: AR landings (accounts-receivable sprint) ──────────────────────────
+  'raw.ft_invoice':              { cls: 'etl-only', why: 'AR 0037 — customer invoice origin (FreshTrack)' },
+  'raw.ft_dispatch_load_invoice':{ cls: 'etl-only', why: 'AR 0037 — invoice↔dispatch junction' },
+  'raw.ns_customer':             { cls: 'etl-only', why: 'AR 0038 — NetSuite customer master' },
+  'raw.ns_customer_invoice':     { cls: 'etl-only', why: 'AR 0038 — CustInvc (externalid=FT no crosswalk)' },
+  'raw.ns_customer_invoice_line':{ cls: 'etl-only', why: 'AR 0038' },
+  'raw.ns_customer_payment':     { cls: 'etl-only', why: 'AR 0038 — CustPymt (paid dates)' },
+  'raw.ns_customer_credit':      { cls: 'etl-only', why: 'AR 0038 — CustCred' },
+  'raw.ns_ar_apply_link':        { cls: 'etl-only', why: 'AR 0038 — PTLL invoice↔payment apply map' },
+  'raw.remittance':              { cls: 'etl-only', why: 'AR 0039 — parsed remittance header' },
+  'raw.remittance_line':         { cls: 'etl-only', why: 'AR 0039 — parsed remittance lines' },
 
   // ── core: dimensions ───────────────────────────────────────────────────────
   'core.dim_grower':             { cls: 'grower-scoped',    why: '0006; RLS 0008/0010/0026' },
@@ -122,6 +133,8 @@ const REGISTRY: Record<string, RegistryEntry> = {
   'core.fact_order_item':        { cls: 'internal-only', why: '0024' },
   'core.fact_settlement_bridge': { cls: 'internal-only', why: '0031' },
   'core.fact_revenue_charge':    { cls: 'internal-only', why: '0031' },
+  'core.fact_customer_invoice':  { cls: 'internal-only', why: 'AR 0040 — customer book (internal); RLS fail-closed to internal' },
+  'core.fact_remittance_line':   { cls: 'internal-only', why: 'AR 0040 — remittance reconciliation (internal)' },
   // ── core: views ────────────────────────────────────────────────────────────
   'core.load_box_reconciliation':{ cls: 'ungranted-view', invoker: true,  why: '0007 recon surface; cube grant only' },
   'core.crosswalk_ns_grower':    { cls: 'ungranted-view', invoker: false, why: '0015 owner-rights crosswalk; cube grant only' },
@@ -147,6 +160,9 @@ const REGISTRY: Record<string, RegistryEntry> = {
   'semantic.retail_prices':                 { cls: 'ungranted-view',   invoker: true, why: '0029 — deliberately NO authenticated grant (fail-closed); cube-only door' },
   'semantic.recon_settlement_source':       { cls: 'semantic-invoker', invoker: true, pending: true,
     why: 'SPRINT C2 (0035) GP↔NetSuite tie surface — internal gate = underlying facts RLS via security_invoker' },
+  'semantic.ar_customer_invoice':           { cls: 'semantic-invoker', invoker: true, why: 'AR 0041; internal gate = fact_customer_invoice RLS' },
+  'semantic.ar_debtor_open':                { cls: 'semantic-invoker', invoker: true, why: 'AR 0041' },
+  'semantic.ar_remittance_reconciliation':  { cls: 'semantic-invoker', invoker: true, why: 'AR 0041' },
 };
 
 const ALLOWED_GRANTEES = new Set(['postgres', 'authenticated', 'cube_readonly']);
