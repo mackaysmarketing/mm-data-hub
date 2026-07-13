@@ -1,3 +1,37 @@
+# Handoff (2026-07-13): WOW scan ingest — Q.Checkout Woolworths sell-through
+
+Status: **✅ pipeline built + proven end-to-end on the synthetic source; awaiting the real 303k
+export for full-scale AC numbers.** Migration `0049` applied then demo rows cleaned (tables empty).
+Commit `95add78`. Per `MODULE-WOW-SCAN-SPEC.md` (committed as the sprint doc `4121d6f`).
+
+## What landed
+- **`scripts/parse_wow_scan.py`** (Tim's, committed): fail-loud on the 8 dimension columns or a
+  missing metric prefix; keeps ONLY the finest grain (drops Total-grain — the 8× multiply trap);
+  '-'/blank → null; splits `{article}-{UOM} - {desc}`; row-accounting balances or exits 1.
+- **`raw.wow_scan_loads`** (sidecar ledger) + **`raw.wow_scan_export`** (verbatim clean CSV, etl-only)
+  → **`core.wow_scan_weekly`** (typed finest grain; PK = week×article×state×VCU×channel×promotion;
+  UPSERT so Quantium restatements win; internal-only) → semantic **`v_wow_scan_national`** (derived
+  totals), **`v_wow_scan_promo`** (promo share), **`v_scan_cross_retailer`** (WOW ∪ Coles national
+  weekly — BOTH scans end **Tuesday**, so alignment is exact-date, correcting the spec draft's offset
+  note). `npm run wow:load <export.csv>` (runs the parser) or `-- --clean <csv> --meta <json>`.
+- **Evidence (synthetic source, the honest end-to-end proof):** parse 30 in = 9 out + 9 blank + 12
+  total (0 unparsed) → load → core 9 (re-load idempotent, **0 dup groups**) → views. `wow:verify`
+  **9/9** (accounting, PK, national reconciliation view==core, promo split, cross-retailer, RLS
+  internal-only ×4). AC6: renamed column exits non-zero printing expected-vs-got. Parser tests drive
+  the real Python via spawnSync — **139/139**; **rls:posture 94/94**; typecheck clean.
+- **Wiki:** `docs/wiki/wow-scan.md` (Tuesday weeks, '-' nulls, 8× total trap, VCU clusters, 4-week
+  restatement overlap, article churn, unreliable wizard state filter).
+
+## Full-scale ACs pending the real export (one `wow:load` away)
+AC1 (rows_in 303,264 / out 35,335), AC3 (SUM sales $497,463,530 / volume 111,445,503 vs the source
+Australia/Total slice), AC5 (week 2026-07-07 article 0133211) — the 303k CSV was NOT in the drop
+(only the 100KB clean-CSV excerpt + sidecar). When Tim provides it: `npm run wow:load <file>` then
+`npm run wow:verify`; the sidecar's own accounting already shows 303,264 = 35,335 + 188,690 + 79,239.
+
+## Deferred (spec Out-of-Scope)
+- Q.Checkout export automation; store-level data (subscription tier); the Coles↔WOW article-mapping
+  table (v_scan_cross_retailer ships the week+retailer+line spine; the mapping seed is its own sprint).
+
 # Handoff (2026-07-12c): Insight layer + NL foundation
 
 Status: **✅ built + proven (author dry-ran everything in a rolled-back txn pre-handoff; 21/21 live).**

@@ -274,8 +274,15 @@ INTERNAL-ONLY exposure; category-level (NO EAN/SKU).
   null-safe. Both internal-only (0040 posture).
 - **Proofs:** `npm run scan:reconcile` — column drift-guard vs SCAN_MEASURE_COLUMNS, raw↔fact
   parity, channel checksum 0-mismatch, conformance, NULL preservation, internal-only RLS behavioral.
-- **Deferred:** Woolworths scan (needs their export; parser per-retailer pluggable), auto-ingestion
-  channel, SKU-level scan, Cube exposure.
+- **Woolworths scan (0049, WOW sprint 2026-07-13):** the Q.Checkout counterpart —
+  `scripts/parse_wow_scan.py` (Python, fail-loud, finest-grain-only to dodge the 8× total-grain
+  trap) → `raw.wow_scan_loads`+`raw.wow_scan_export` (etl-only) → `core.wow_scan_weekly` (typed,
+  PK = week×article×state×VCU×channel×promotion, UPSERT for Quantium restatements, internal-only) →
+  `semantic.v_wow_scan_national`/`_promo`/`v_scan_cross_retailer`. **BOTH scans end TUESDAY** → the
+  cross-retailer union aligns exact-date. `npm run wow:load` (runs the parser) · `npm run wow:verify`.
+  Full-scale AC numbers await the real 303k export.
+- **Deferred:** ALDI scan (per-retailer pluggable), auto-ingestion channel, SKU-level scan, the
+  Coles↔WOW article-mapping table, Cube exposure.
 
 ## Insight layer + NL foundation (insight sprint, 2026-07-12)
 The first CROSS-domain analytics (all INTERNAL-ONLY) + the business-vocabulary layer.
