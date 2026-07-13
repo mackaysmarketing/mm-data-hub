@@ -117,6 +117,8 @@ const REGISTRY: Record<string, RegistryEntry> = {
   'raw.remittance':              { cls: 'etl-only', why: 'AR 0039 — parsed remittance header' },
   'raw.remittance_line':         { cls: 'etl-only', why: 'AR 0039 — parsed remittance lines' },
   'raw.retail_scan':             { cls: 'etl-only', why: 'Scan 0042 — Coles Circana sell-through landing' },
+  'raw.wow_scan_loads':          { cls: 'etl-only', why: 'WOW 0049 — Q.Checkout load ledger (sidecar)' },
+  'raw.wow_scan_export':         { cls: 'etl-only', why: 'WOW 0049 — verbatim clean-CSV landing' },
 
   // ── core: dimensions ───────────────────────────────────────────────────────
   'core.dim_grower':             { cls: 'grower-scoped',    why: '0006; RLS 0008/0010/0026' },
@@ -137,6 +139,7 @@ const REGISTRY: Record<string, RegistryEntry> = {
   'core.fact_customer_invoice':  { cls: 'internal-only', why: 'AR 0040 — customer book (internal); RLS fail-closed to internal' },
   'core.fact_remittance_line':   { cls: 'internal-only', why: 'AR 0040 — remittance reconciliation (internal)' },
   'core.fact_retail_scan':       { cls: 'internal-only', why: 'Scan 0043 — retailer sell-through (internal)' },
+  'core.wow_scan_weekly':        { cls: 'internal-only', why: 'WOW 0049 — Woolworths sell-through (internal)' },
   // ── core: views ────────────────────────────────────────────────────────────
   'core.load_box_reconciliation':{ cls: 'ungranted-view', invoker: true,  why: '0007 recon surface; cube grant only' },
   'core.crosswalk_ns_grower':    { cls: 'ungranted-view', invoker: false, why: '0015 owner-rights crosswalk; cube grant only' },
@@ -173,6 +176,9 @@ const REGISTRY: Record<string, RegistryEntry> = {
   'semantic.ar_debtor_open':                { cls: 'semantic-invoker', invoker: true, why: 'AR 0041' },
   'semantic.ar_remittance_reconciliation':  { cls: 'semantic-invoker', invoker: true, why: 'AR 0041' },
   'semantic.retail_scan':                   { cls: 'semantic-invoker', invoker: true, why: 'Scan 0044; internal gate = fact_retail_scan RLS' },
+  'semantic.v_wow_scan_national':           { cls: 'semantic-invoker', invoker: true, why: 'WOW 0049; internal gate = wow_scan_weekly RLS' },
+  'semantic.v_wow_scan_promo':              { cls: 'semantic-invoker', invoker: true, why: 'WOW 0049' },
+  'semantic.v_scan_cross_retailer':         { cls: 'semantic-invoker', invoker: true, why: 'WOW 0049 — WOW ∪ Coles national weekly spine' },
   'semantic.market_week':                   { cls: 'semantic-invoker', invoker: true, pending: true,
     why: 'Insight 0047; internal gate = fact_market_week RLS via security_invoker' },
   'semantic.customer_margin':               { cls: 'semantic-invoker', invoker: true, pending: true,

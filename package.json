@@ -55,6 +55,8 @@
     "nl:tool": "node --experimental-strip-types scripts/nl_glossary_tool.ts",
     "nl:load": "node --experimental-strip-types src/loaders/nl_glossary.ts",
     "scan:load": "node --experimental-strip-types src/loaders/retail_scan.ts",
+    "wow:load": "node --experimental-strip-types src/loaders/wow_scan.ts",
+    "wow:verify": "node --experimental-strip-types scripts/wow_scan_verify.ts",
     "scan:core": "node --experimental-strip-types src/loaders/retail_scan_core.ts",
     "scan:reconcile": "node --experimental-strip-types scripts/retail_scan_reconcile.ts",
     "cube:compile": "node --experimental-strip-types cube/compile_check.ts",
