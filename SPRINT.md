@@ -1,95 +1,141 @@
-# Sprint: Insight layer — cross-domain marts + the business-language (NL) foundation
-Date: 2026-07-12
+# Module Spec: WOW Scan Data Ingest (Q.Checkout)
+Date: 2026-07-13
 Repo: mm-data-hub
+Status: Ready to build
 
-## Part 1 — the schema-value review (the findings this sprint implements)
-The hub now lands EIGHT domains that have never been JOINED analytically. Each domain is proven
-internally; the untapped value is at the intersections. Review conclusions (verified feasible
-against live data 2026-07-12):
+## Scope
 
-**The insight gaps, ranked:**
-1. **Demand vs supply (“our share of the till”)** — `fact_retail_scan` gives Coles’s TOTAL banana
-   sell-through (kg/units/$ by week × state × segment); dispatch gives OUR shipments into Coles DCs.
-   Nobody can currently answer “what share of what Coles sold did we supply, and are we over/under-
-   shipping demand?” Feasible: consignee names map cleanly to retailer×state (Coles Melbourne → VIC…),
-   products map to scan segments (variety/pack_type → REGULAR/PRE_PACK/LADY_FINGER/OTHER), kg from
-   `dim_product.net_weight_value` × boxes.
-2. **The price ladder (farm gate → wholesale → shelf → till)** — four price points exist in four
-   domains and are never lined up: GP `price_invoiced_value`/kg (what the grower got), bridge/order
-   sell $/kg (what we invoiced the retailer), `retail_prices` (shelf), scan `price_per_volume`
-   (realised till $/kg). Price transmission + margin stack per week × segment: NOVEL, high value.
-3. **Customer margin** — AR gives revenue per customer; the settlement bridge gives the grower cost
-   of that fruit per consignee. Joined at customer × month = gross margin by customer (freight cost
-   to layer in later when that domain lands).
-4. **Grower scorecard** — per grower × month: volume, net return, price achieved vs pool average,
-   bridge variance, payment lag. All landed; never assembled.
-5. **Supplier share (competitive)** — the scan manufacturer-split already carries FRESHMAX,
-   PERFECTION FRESH, ROCK RIDGE, PRIVATE LABEL… share within Coles by segment/week. Pure derivation.
-6. *(Planned-data extensions, NOT this sprint: freight cost-to-serve joins #3 when landed; SOH ages
-   against demand; harvest lineage extends the ladder to the block. Designed-for, not built.)*
+Ingest the Woolworths Q.Checkout "Scan data export" CSV into the medallion warehouse:
+raw landing -> core fact table -> semantic rollups exposed through Cube. The feed is the
+Woolworths counterpart to the existing Coles Synergy scan feed and must join to it on
+week and article for cross-retailer reporting.
 
-**Alignment findings that shape the design:** scan weeks end TUESDAY (W/E 07-07-26); dispatch/GP
-use dates → align by date-range membership into the scan week (week_ending−6 .. week_ending),
-NEVER by ISO-week equality. Internal transfer + test consignees (MM Truganina, Truganina Test)
-must be excluded from retail supply measures. Value-added (Processed Banana) is out of scan scope.
+Explicitly NOT in scope: automating the export out of Q.Checkout (manual download for
+now), store-level data (not available at current subscription tier — finest location
+grain is State x Simple VCU), and any Cube dashboard work beyond exposing the view.
 
-## Part 1 scope — build
-1. **0045 crosswalks:** `core.crosswalk_customer_retail` (consignee → retailer_group + state_code,
-   name-rule + DC-city lookup, method + unmapped surfaced) · `core.crosswalk_product_segment`
-   (product → banana segment via variety/pack_type/organic rules; non-banana + value-added flagged
-   out-of-scope). Both refresh-function built, both proven for coverage.
-2. **0046 mart:** `core.fact_market_week` — grain week_ending (from scan) × retailer_group × state ×
-   segment: scan demand (kg/units/$/till price/promo split) + our supply into that cell (boxes, kg,
-   sell $ via bridge) + farm-gate $/kg (GP, pack_date-aligned) + our_share_kg. Refresh via the
-   temp-table pattern.
-3. **0047 semantic (all INTERNAL-ONLY):** `semantic.market_week` (+ ladder + share + transmission
-   derivations, null-safe) · `semantic.customer_margin` (customer × month: AR revenue vs grower
-   cost vs deductions retained) · `semantic.grower_scorecard` (grower × month, is_internal-gated —
-   pool comparisons must not be computed over a grower’s own-rows-only view) ·
-   `semantic.retail_supplier_share` (scan mfr split shares).
-4. **Proofs `insight:reconcile`:** crosswalk coverage (≥95% of Coles/WOW/ALDI volume mapped;
-   ≥95% banana pallets segment-mapped), mart parity BOTH sides derived in-run (scan side == fact_
-   retail_scan; supply side == pallet sums in scope), share sanity (0 < our_share ≤ 1.05 on Coles
-   cells), ladder ordering (farm ≤ wholesale ≤ till, informational), RLS behavioral. Posture
-   registry additions; battery green.
+## Source characteristics (verified against the 13 Jul 2026 sample)
 
-## Part 2 — the natural-language (NL) foundation + engagement
-Goal: agents and BI answering questions in MACKAYS language (“cavs to Coles Melbourne”, “week 31”,
-“lady fingers”, “the majors”, “Jon’s growers”) — a translation layer from business vocabulary to
-hub entities/metrics. This sprint builds the FOUNDATION + the engagement that harvests Tim’s
-vocabulary; wiring into the MCP catalog follows once his input returns.
-1. **0048 schema:** `core.business_term` (entity_type × entity_key × alias grain; canonical name,
-   source [seed|tim|derived], notes) + `core.nl_phrase` (free-form phrase → meaning/mapping for
-   metrics, time expressions, units, roles). Internal-only semantic view `semantic.business_glossary`.
-   Seeded from the hub itself (canonical names + obvious derivations e.g. grower codes, segment
-   names, geography codes) so the engine has a base layer even before Tim’s input.
-2. **The engagement tool** (`nl:tool` → reports/nl_glossary_<date>.html, the revenue-marker UX):
-   pre-populated with EVERY hub entity — products (with attributes), customers (with retailer/state),
-   growers, sheds, segments, geographies, charge categories, metric definitions — each with alias +
-   notes inputs; plus guided free-form sections (units of speech, time vocabulary, people/roles,
-   “top questions you’d ask in plain English”). localStorage autosave; exports a JSON Tim sends back.
-3. **`nl:load`** — lands the returned JSON into 0048 (idempotent, source='tim').
+- File: report-wizard CSV, ~40 MB, 303k rows for 27 products x 52 weeks.
+- Layout: metadata block (export parameters) above a `Promo Week` header row, then data.
+- `Promo Week` is week-ENDING Tuesday (Woolworths Wed-Tue promo week), DD/MM/YYYY.
+- Dimensions: Sub-Category, Segment, Product, Location (Australia + 7 states),
+  Simple VCU (Total / CORE / UP / VALUE — Woolworths store-format clusters),
+  Channel (Total / INSTORE / ONLINE), Promotion (Total / On / Off promotion).
+- Metrics: Volume, Sales, Units, Average price per volume, Average unit price.
+  Metric column names carry a `- N Week(s)` suffix that varies with wizard settings.
+- Nulls appear as blank OR `-`. 62% of rows are blank cross-join padding.
+- Total-grain rows coexist with their splits: naive SUM over the file multiplies
+  results up to 8x. Only the finest grain is loaded; totals are derived.
+- The Product field parses as `{article_number}-{UOM} - {description}`
+  (e.g. `0133211-KG - BANANA 1KG`), 100% parse rate on the sample.
+
+## Architecture
+
+```
+uploads/ (manual CSV)                       raw.wow_scan_export   (landed verbatim + load_id)
+        -> parse_wow_scan.py ->             core.wow_scan_weekly  (finest grain, typed, keyed)
+                                            semantic.v_wow_scan_* (totals, promo split, x-retailer)
+```
+
+### raw.wow_scan_export
+Land the file verbatim (all columns text) plus `load_id uuid`, `source_filename`,
+`loaded_at`. The metadata sidecar JSON from the parser is stored in
+`raw.wow_scan_loads (load_id, export_parameters jsonb, stats jsonb, loaded_at)`.
+
+### core.wow_scan_weekly (DDL)
+
+```sql
+create table core.wow_scan_weekly (
+  week_ending          date        not null,  -- Tuesday
+  article_number       text        not null,  -- zero-padded, e.g. '0133211'
+  uom                  text        not null,  -- 'KG' | 'EA'
+  article_description  text        not null,
+  sub_category         text        not null,  -- BANANA | TROPICAL FRUIT
+  segment              text        not null,
+  state                text        not null,  -- 7 AU states, no 'Australia'
+  vcu                  text        not null,  -- CORE | UP | VALUE, no 'Total'
+  channel              text        not null,  -- INSTORE | ONLINE, no 'Total'
+  promotion            text        not null,  -- ON_PROMOTION | OFF_PROMOTION, no 'Total'
+  volume               numeric,
+  sales                numeric,
+  units                numeric,
+  avg_price_per_volume numeric,
+  avg_unit_price       numeric,
+  load_id              uuid        not null references raw.wow_scan_loads(load_id),
+  primary key (week_ending, article_number, state, vcu, channel, promotion)
+);
+```
+
+Load strategy: upsert on the primary key (re-exports of overlapping windows replace
+prior rows — Quantium restates recent weeks). RLS: internal-only for now; this is
+Mackays category data, not grower-scoped, so no consignor_id policy applies.
+
+### Semantic layer
+- `semantic.v_wow_scan_national` — week x article totals (derived, matches the
+  export's own Australia/Total slice to the cent — see AC3).
+- `semantic.v_wow_scan_promo` — promo vs off-promo split with promo share of sales.
+- `semantic.v_scan_cross_retailer` — union with the Synergy Coles feed on
+  (week_ending, article/mapping, state). Note the week-basis difference:
+  Woolworths weeks end Tuesday; align on week_ending date, document the offset
+  against the Coles week before anyone compares "same week" numbers.
+
+## Parser contract (parse_wow_scan.py)
+
+1. Locate the `Promo Week` header row dynamically; capture the metadata block above it.
+2. FAIL LOUDLY (non-zero exit) if the eight dimension columns change or a metric
+   column prefix is missing. Never silently adapt to a changed export format.
+3. Drop blank-metric rows (count them). Treat blank and `-` as null.
+4. Drop Total-grain rows (Location='Australia' OR any dimension = 'Total') unless
+   `--keep-totals` is passed. Count them.
+5. Parse Product into article_number / uom / description; count parse failures.
+6. Convert dates to ISO; normalise channel and promotion to uppercase enums.
+7. Emit clean CSV + JSON sidecar (export parameters, stats, coverage).
+8. Row accounting must balance: rows_in = rows_out + blank_dropped + total_dropped,
+   else exit 1.
 
 ## Acceptance Criteria
-- [ ] Crosswalk coverage pasted (retail volume ≥95% mapped; banana pallets ≥95% segment-mapped;
-      unmapped listed, never dropped).
-- [ ] fact_market_week built; parity pasted (scan side + supply side, both derived in-run);
-      our_share sane on every Coles cell; ladder populated (farm/wholesale/till non-null on the
-      majority of REGULAR × VIC/QLD cells).
-- [ ] 4 semantic views live, internal-only proven behaviorally; posture registry green (expected 87).
-- [ ] insight:reconcile green with pasted evidence; existing battery + tests + typecheck green.
-- [ ] NL schema landed + seeded; the engagement HTML generated from live hub data, verified in a
-      browser (chips/autosave/export), delivered to Tim with a clear ask.
-- [ ] Docs (CLAUDE.md + HANDOFF) updated; committed.
+- [ ] AC1: Parser processes the 13 Jul 2026 sample with exit code 0; sidecar shows
+      rows_in 303,264 / rows_out 35,335 / blank 188,690 / total-grain 79,239 /
+      unparsed products 0. Paste the sidecar stats block.
+- [ ] AC2: `select count(*) from core.wow_scan_weekly` = 35,335 after load; primary
+      key holds (load does not error on duplicates). Paste the query result.
+- [ ] AC3: Reconciliation — SUM(sales) and SUM(volume) from core.wow_scan_weekly
+      equal the source file's Australia/Total/Total/Total slice to 0.001%
+      (expected: sales $497,463,530; volume 111,445,503). Paste both numbers.
+- [ ] AC4: Re-running the same load is idempotent — row count unchanged, no dupes.
+      Paste count before/after.
+- [ ] AC5: `semantic.v_wow_scan_national` for week 2026-07-07, article 0133211
+      matches the source's Australia/Total row for that week. Paste both values.
+- [ ] AC6: Feeding the parser a CSV with a renamed dimension column exits non-zero
+      with a clear message. Paste the command output.
 
-## Deferred (with reason)
-- MCP/Cube wiring of the marts + glossary — after Tim’s vocabulary returns and definitions settle.
-- Freight/SOH/harvest joins into the mart — those domains aren’t landed yet (designed-for).
-- Woolworths/ALDI scan + remittance parsers — awaiting samples.
+## Definition of Done
+- [ ] All acceptance criteria checked, each with pasted evidence
+- [ ] Parser + loader committed with tests covering: null markers, Total-grain
+      filtering, product parse, header-change failure, row accounting
+- [ ] Views created and queryable in Cube
+- [ ] HANDOFF.md updated and committed
+- [ ] Wiki page added to the mm-data-hub knowledge wiki (source quirks: Tuesday
+      weeks, '-' nulls, 8x total-grain trap, VCU definitions, restatement window)
 
 ## Goal Condition
-/goal The insight layer + NL foundation is built per SPRINT.md 2026-07-12b: crosswalks proven at
-≥95% coverage, fact_market_week + 4 internal-only semantic views live with insight:reconcile green
-(both-sides-derived parity, share sanity, RLS behavioral), posture green, battery green, NL schema
-(0048) seeded, and the pre-populated vocabulary engagement tool generated from live hub data,
-browser-verified, and delivered to Tim. Docs updated, committed. Stop after 45 turns.
+
+/goal All six acceptance criteria in MODULE-WOW-SCAN-SPEC.md pass with real command
+output or query rows pasted for each — especially the AC3 reconciliation figures and
+the AC6 failure-mode output. Do not modify the Synergy ingest or any existing core
+tables. Stop after 25 turns.
+
+## Out of Scope
+- Q.Checkout export automation (browser automation is a later sprint)
+- Store-level data (subscription tier limitation — commercial, not technical)
+- Coles/Woolworths article mapping table (separate sprint; v_scan_cross_retailer
+  can ship with a manual seed mapping for the banana lines)
+
+## Known source risks
+- Quantium restates recent weeks: always re-export a trailing 4-week overlap and
+  rely on the upsert to correct.
+- Three articles in the sample have zero data (0826819, 0224551, 0104055) and four
+  have one week of life — expect the article list to churn; never hard-code SKUs.
+- The wizard ignored the state filter in the sample (all 7 states came back despite
+  4 selected). Treat filename-derived assumptions as unreliable; trust file content.

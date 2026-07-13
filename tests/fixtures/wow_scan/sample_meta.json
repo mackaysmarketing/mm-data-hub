@@ -1,0 +1,39 @@
+{
+  "source_file": "sample.csv",
+  "parsed_at_utc": "2026-07-13T02:43:26+00:00",
+  "export_parameters": {
+    "Product hierarchy": "BANANA, TROPICAL FRUIT, BANANAS CAVENDISH, BANANAS OTHER (INC P/P), 0104424-EA - PASSIONFRUIT 8EA",
+    "Product groups": "",
+    "Product structure": "Sub-Category, Segment, Product",
+    "Time Period Data Type": "Trend (Weekly breakdown)",
+    "Focus period": "Last 52 weeks (9 Jul 25 - 7 Jul 26)",
+    "Location": "Australia, NEW SOUTH WALES, NORTHERN TERRITORY, QUEENSLAND, SOUTH AUSTRALIA",
+    "Location structure": "Division, Simple VCU, State",
+    "Channel": "Total, In-store, Online",
+    "Promotion": "Total, On Promotion, Off Promotion",
+    "Metrics": "Volume, Sales, Units, Average price per volume, Average unit price",
+    "Source": "Q.Checkout"
+  },
+  "stats": {
+    "rows_in": 303264,
+    "rows_out": 35335,
+    "rows_blank_dropped": 188690,
+    "rows_total_grain_dropped": 79239,
+    "rows_unparsed_product": 0
+  },
+  "coverage": {
+    "weeks": 52,
+    "week_min": "2025-07-15",
+    "week_max": "2026-07-07",
+    "articles": 24,
+    "states": [
+      "NEW SOUTH WALES",
+      "NORTHERN TERRITORY",
+      "QUEENSLAND",
+      "SOUTH AUSTRALIA",
+      "TASMANIA",
+      "VICTORIA",
+      "WESTERN AUSTRALIA"
+    ]
+  }
+}
