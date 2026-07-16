@@ -40,8 +40,10 @@ authenticated session for mm-hub's `public` schema + storage too. Read-only audi
 - **`public` has 7 RLS-OFF tables with FULL grants to authenticated AND anon** (`growers`,
   `gr_banana_blocks`, `gr_block_parcel`, `gr_block_tags`, `gr_grower_crop_area`, `gr_grower_tags`,
   `gr_parcels`) — already readable/WRITABLE with the anon key today, Auth0 or not. Fix in mm-hub.
-- mm-hub's `private.portal_*` policy helpers likely honor app_metadata with no issuer check — the
-  same hole 0050 closed for raw/core/semantic exists in `public` and only mm-hub can close it.
+- ~~mm-hub's `private.portal_*` helpers likely honor app_metadata~~ **VERIFIED SAFE (2026-07-16):**
+  they key on `auth.uid()` → `hub_users`/`module_access` lookups, which fail CLOSED for Auth0
+  tokens (non-uuid sub). Remaining mm-hub work = the RLS-OFF tables + reviewing `using(true)` /
+  insert-true policies. Full list: `docs/mm-hub-public-hardening-checklist.md`.
 - The tenant Action must pin `role=authenticated` (role claim maps to the Postgres role;
   service_role would bypass all RLS).
 **To enable** (after mm-hub hardens): Dashboard → Authentication → Sign In/Providers → Third Party
