@@ -1,3 +1,22 @@
+> **⚠ FLAG from the mm-hub hardening session (2026-07-16, after the handoff below):**
+> mm-hub's public P0/P1 hardening is DONE, the tenant Action now pins `role=authenticated`,
+> **third-party auth is ENABLED and `semantic` is REST-EXPOSED** (auth0:rls 81/81 and
+> rls:multifarm 45/45 re-run green post-enablement) — so the "⛔ NOT enabled" status below is
+> stale. Consequence for the drift cleanup: **`semantic.grower_crop_area` (anon SELECT grant)
+> is now anon-reachable over REST** — live probe returns `HTTP 200 []`, empty only because the
+> register base tables have no prod rows yet. Before any register data loads:
+> `revoke select on semantic.grower_crop_area from anon;` (+ the rest of the six-relation
+> drift cleanup: anon grants/policies on the raw/core register tables, anon USAGE on semantic).
+> Keep `authenticated` intact — mm-hub's `gr_*` views are now security_invoker over your grants/RLS.
+>
+> **✅ RESOLVED (same day, migration `0051_revoke_anon_grower_register_drift`):** every anon
+> foothold stripped from raw/core/semantic — all six drift relations' anon grants, the two anon
+> ALL policies, and anon USAGE on core+semantic (raw included idempotently). Verified live:
+> the anon REST probe went 200 → **401 permission-denied for schema semantic**; anon
+> grants/policies in hub schemas now **0**. Re-proven post-fix: `auth0:rls` 81/81 ·
+> `rls:multifarm` 45/45 · posture anomalies 24 → 16 (remainder = registry classification +
+> dead-grant/cube posture on the six relations — the drift task chip). `authenticated` untouched.
+
 # Handoff (2026-07-16): Auth0 third-party auth (grower-portal) — grower RLS second identity path
 
 Status: **✅ hub-side DB work built, applied to prod, proven. ⛔ third-party auth NOT enabled —
