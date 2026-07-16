@@ -1,3 +1,33 @@
+# Handoff (2026-07-16b): grower-register posture (0052) — drift cleanup closed
+
+Status: **✅ done; `rls:posture` fully green (100/100 relations conform, 0 problems) for the first
+time since the register drift landed.** Migration `0052` applied. Closes the drift task chip.
+
+## What landed
+- **Migration `0052_grower_register_posture`** — the six register relations classified + gated:
+  - `raw.atcm_crop_blocks_fnq` / `raw.qscf_lots_banana_belt` / `core.crop_block_parcel` →
+    **internal-only** reads (spatial reference + derived overlap; no grower-facing view joins
+    them — the 0034 dim_customer criterion) + cube read-all.
+  - `core.block_grower_tag` / `core.parcel_grower_tag` (grower attribution — sensitive) →
+    **internal-only reads + INTERNAL-GATED WRITES**: the hub's FIRST registered interactive-write
+    surface. mm-hub's `gr_block_tags`/`gr_grower_tags` are security_invoker auto-updatable views,
+    so staff tag edits write through as the logged-in user; INSERT/UPDATE/DELETE policies are
+    exactly `is_internal_claim()`-gated.
+  - `semantic.grower_crop_area` → **security_invoker** (was owner-rights — the 0051 anon-REST
+    incident surface); base internal-only RLS now applies to the caller.
+- **Registry contract evolution (`scripts/rls_posture.ts`):** `writes:'internal'` on a registry
+  entry is now the ONLY way a non-SELECT policy is legal (A4 validates the exact gate + role;
+  new A4b fails if a declared write surface is missing any of its three policies). Default stays
+  writes-via-service_role-only. All six relations registered with provenance.
+
+## Evidence
+- Dry-run in a rolled-back txn: grower + Auth0 INSERT → **42501** (RLS write gate); internal
+  INSERT passes the gate (fails only 23503 FK — no block data loaded yet); all read postures per
+  class. Live after apply: `rls:posture` **100/100 · 0 problems** · `auth0:rls` 81/81 ·
+  `rls:multifarm` 45/45 · tests 139/139 · typecheck clean.
+- NB for mm-hub: staff tag-writing requires the user's `app_metadata.is_internal=true` (1 of 2
+  auth users carries it today) — stamp it for any new staff account or register edits 42501.
+
 > **⚠ FLAG from the mm-hub hardening session (2026-07-16, after the handoff below):**
 > mm-hub's public P0/P1 hardening is DONE, the tenant Action now pins `role=authenticated`,
 > **third-party auth is ENABLED and `semantic` is REST-EXPOSED** (auth0:rls 81/81 and

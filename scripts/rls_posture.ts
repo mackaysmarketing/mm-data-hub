@@ -39,7 +39,11 @@
 //      role (dead grant — fail-closed, but posture has drifted).
 //   A3 policy for a role that holds no grant (dead policy — the 0030
 //      dim_gp_charge/dim_ns_charge gap; remediated by migration 0036).
-//   A4 any non-SELECT policy (writes go through service_role, which bypasses RLS).
+//   A4 any non-SELECT policy (writes go through service_role, which bypasses RLS) — UNLESS the
+//      registry entry declares writes:'internal' AND the policy is exactly
+//      is_internal_claim()-gated to authenticated (the 0052 grower-register tag tables: the
+//      hub's first registered interactive-write surface; mm-hub staff write through
+//      security_invoker views).
 //   A5 any grantee outside {postgres, authenticated, cube_readonly} (hub_mcp must
 //      hold NO standing grants per 0013; anon/PUBLIC must never appear).
 //   A6 the app_metadata-only fail-closed helper functions exist.
@@ -68,6 +72,9 @@ interface RegistryEntry {
   invoker?: boolean;
   /** object lands later in this sprint (C1/C2) — absence is a note, not a failure */
   pending?: boolean;
+  /** DECLARED interactive-write surface: is_internal_claim()-gated INSERT/UPDATE/DELETE policies
+   *  for authenticated are required AND are the only legal non-SELECT policies (A4; 0052). */
+  writes?: 'internal';
   /** provenance: the migration(s) that declare this posture */
   why: string;
 }
@@ -158,6 +165,16 @@ const REGISTRY: Record<string, RegistryEntry> = {
   // ── core: NL glossary (insight/NL sprint, 0048) ────────────────────────────
   'core.business_term':          { cls: 'internal-only', pending: true, why: 'NL 0048 — business vocabulary → hub entities (names customers/metrics; internal)' },
   'core.nl_phrase':              { cls: 'internal-only', pending: true, why: 'NL 0048 — free-form phrase → meaning/mapping (internal)' },
+  // ── grower register (spatial + tagging; landed 2026-07-13/14 OUTSIDE this repo; posture 0052,
+  //    anon stripped 0051 after the anon-REST incident). Staff feature behind mm-hub's gr_*
+  //    security_invoker views — no grower-facing view joins these, hence internal-only.
+  'raw.atcm_crop_blocks_fnq':    { cls: 'internal-only', why: 'register spatial landing (ATCM public dataset, FNQ); 0052' },
+  'raw.qscf_lots_banana_belt':   { cls: 'internal-only', why: 'register spatial landing (QLD cadastre, banana belt); 0052' },
+  'core.crop_block_parcel':      { cls: 'internal-only', why: 'register block×parcel overlap (derived, no grower info); 0052' },
+  'core.block_grower_tag':       { cls: 'internal-only', writes: 'internal',
+    why: 'register grower-attribution tags — staff read+WRITE via mm-hub public.gr_block_tags (invoker, auto-updatable); first registered interactive-write surface (0052)' },
+  'core.parcel_grower_tag':      { cls: 'internal-only', writes: 'internal',
+    why: 'register parcel tags — staff read+write via mm-hub public.gr_grower_tags; 0052' },
 
   // ── semantic ───────────────────────────────────────────────────────────────
   'semantic.grower_dispatch_detail':        { cls: 'semantic-invoker', invoker: true, why: '0008/0022; scope = raw dispatch/pallet + dim_grower RLS' },
@@ -192,12 +209,14 @@ const REGISTRY: Record<string, RegistryEntry> = {
     why: 'Insight 0047; internal gate = fact_retail_scan RLS' },
   'semantic.business_glossary':             { cls: 'semantic-invoker', invoker: true, pending: true,
     why: 'NL 0048 agent catalog; internal gate = business_term/nl_phrase RLS via security_invoker' },
+  'semantic.grower_crop_area':              { cls: 'semantic-invoker', invoker: true,
+    why: 'register grower × crop area rollup; invoker over internal-only tag tables (0052 — was owner-rights, the 0051 anon-REST incident); wrapped by mm-hub public.gr_grower_crop_area' },
 };
 
 const ALLOWED_GRANTEES = new Set(['postgres', 'authenticated', 'cube_readonly']);
 
 interface Rel { rel: string; kind: string; rls: boolean; invoker: boolean; }
-interface Pol { rel: string; name: string; roles: string[]; cmd: string; qual: string | null; }
+interface Pol { rel: string; name: string; roles: string[]; cmd: string; qual: string | null; check: string | null; }
 
 const problems: string[] = [];
 const notes: string[] = [];
@@ -317,9 +336,9 @@ export async function sweep(c: PoolClient): Promise<boolean> {
     grantsByRel.set(g.rel, s);
   }
 
-  const pols: Pol[] = (await c.query<{ rel: string; name: string; roles: string[]; cmd: string; qual: string | null }>(
+  const pols: Pol[] = (await c.query<{ rel: string; name: string; roles: string[]; cmd: string; qual: string | null; check: string | null }>(
     `select schemaname || '.' || tablename as rel, policyname as name,
-            roles::text[] as roles, cmd, qual
+            roles::text[] as roles, cmd, qual, with_check as check
        from pg_policies
       where schemaname in ('raw', 'core', 'semantic')
       order by 1, 2`,
@@ -391,8 +410,34 @@ export async function sweep(c: PoolClient): Promise<boolean> {
           fail(`A3 ${r.rel}: policy "${p.name}" targets ${role} but ${role} holds no SELECT grant (dead policy)`);
       }
     }
-    // A4: non-SELECT policies
-    for (const p of rp) if (p.cmd !== 'SELECT') fail(`A4 ${r.rel}: non-SELECT policy "${p.name}" (cmd=${p.cmd})`);
+    // A4: non-SELECT policies — forbidden UNLESS the registry declares writes:'internal' and the
+    // policy is exactly is_internal_claim()-gated to authenticated (0052 register tag tables).
+    const entry = REGISTRY[r.rel];
+    const GATE = 'semantic.is_internal_claim()';
+    for (const p of rp) {
+      if (p.cmd === 'SELECT') continue;
+      const qual = (p.qual ?? '').replace(/\s+/g, ' ').trim();
+      const chk = (p.check ?? '').replace(/\s+/g, ' ').trim();
+      const okWrite = entry?.writes === 'internal'
+        && p.roles.length === 1 && p.roles[0] === 'authenticated'
+        && ((p.cmd === 'INSERT' && chk === GATE)
+          || (p.cmd === 'UPDATE' && qual === GATE && chk === GATE)
+          || (p.cmd === 'DELETE' && qual === GATE));
+      if (!okWrite) {
+        fail(`A4 ${r.rel}: non-SELECT policy "${p.name}" (cmd=${p.cmd})` +
+          (entry?.writes === 'internal'
+            ? ` — declared writes:internal but the policy is not exactly is_internal_claim()-gated to authenticated (qual=${qual || 'null'} check=${chk || 'null'})`
+            : ''));
+      }
+    }
+    // A4b: a declared writes:'internal' surface must actually carry all three gated write
+    // policies — a missing one is a silently-broken write path (staff edits would 42501).
+    if (entry?.writes === 'internal') {
+      for (const cmd of ['INSERT', 'UPDATE', 'DELETE']) {
+        if (!rp.some((p) => p.cmd === cmd && p.roles.includes('authenticated')))
+          fail(`A4b ${r.rel}: writes:'internal' declared but no authenticated ${cmd} policy exists`);
+      }
+    }
     // A5: unexpected grantees
     for (const g of grants) if (!ALLOWED_GRANTEES.has(g)) fail(`A5 ${r.rel}: unexpected grantee "${g}" (allowed: postgres, authenticated, cube_readonly)`);
   }
