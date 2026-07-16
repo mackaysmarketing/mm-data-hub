@@ -43,6 +43,42 @@ internal staff/service →  JWT claim  request.jwt.claims.app_metadata.is_intern
 - mm-hub must NOT re-implement this filter client-side. The hub enforces it; mm-hub only
   presents the claim.
 
+## Auth0 third-party auth (grower-portal) — the SECOND grower identity path (0050, 2026-07-16)
+**grower-portal** (grower-facing UI rebuild, separate repo) authenticates growers with **Auth0**
+(tenant `grower-portal`, AU region; issuer `https://grower-portal.au.auth0.com/`). Supabase
+third-party auth (project config) accepts those RS256 JWTs beside mm-hub's own; grower identity
+arrives as the NAMESPACED TOP-LEVEL claim **`https://grower-portal.mackays.com.au/consignor_ids`**
+(string array, set by the tenant's post-login Action). Renaming claim/issuer = breaking for both
+repos — coordinate first; full contract: `docs/mm-hub-auth0-integration.md`.
+- **`semantic.auth0_consignor_ids()`** honors that claim ONLY when `iss` equals the Auth0 issuer
+  EXACTLY (incl. trailing slash); any other/missing issuer → empty set. Array-only, per-element
+  uuid-validated, de-duplicated, fail-closed — the 0026 parsing rigor.
+- **ADDITIVE `auth0_grower_own_*` policies** on exactly the six grower-scoped relations (the 0026
+  set); the mm-hub `grower_own_*` policies are untouched (permissive policies OR). NO internal
+  branch — Auth0 tokens are grower-only, `is_internal` stays an mm-hub-only assertion.
+- **Trust partition (0050 guards):** `current_consignor_ids()` / `is_internal_claim()` now REFUSE
+  `app_metadata` on an Auth0-issued token — a tenant Action can never assert `is_internal` or the
+  mm-hub claim shape. Each issuer's claims flow ONLY through its own helper; both fail closed.
+  No existing mm-hub / Cube / Hub-MCP / proof context carries the Auth0 iss → byte-identical.
+- **⚠ FUTURE-ISSUER INVARIANT:** the deny guards deny ONLY the grower-portal issuer. Enabling
+  ANY additional third-party issuer on the project re-opens the app_metadata path for that
+  issuer — extending the deny guards (or inverting to an issuer allow-list) is REQUIRED in the
+  same change.
+- **Platform-level residuals (the DB cannot defend):** (1) the JWT `role` claim maps to the
+  Postgres role, so the tenant Action must set `role=authenticated` ONLY — an Action emitting
+  `role=service_role` would bypass RLS entirely; keep the Auth0 tenant locked down. (2) Enabling
+  third-party auth is PROJECT-level: Auth0 tokens become valid `authenticated` sessions for
+  mm-hub's `public` schema + storage too — mm-hub must audit its authenticated policies against
+  Auth0-issued tokens BEFORE enablement (this repo cannot guard `public`).
+- **Ordering:** `rls:posture` (grower-scoped class) and `auth0:rls` hard-require 0050 live —
+  apply the migration before running the standing suite; land migration + script together.
+- **Grower-readable surface via Auth0 = identical to via mm-hub** (proven parity): the grower
+  semantic views + shared-reference lookups; internal-only/etl-only/ungranted stay closed. REST
+  access from grower-portal additionally needs `semantic` in the API's exposed schemas.
+- **Proof:** `npm run auth0:rls` (self-deriving: identity-path parity, wrong-iss + supabase-iss
+  forgery, hostile-hybrid app_metadata, mm-hub-untouched) · `rls:multifarm` · `rls:posture`
+  (grower-scoped class now also REQUIRES the additive auth0 policy).
+
 ## Semantic layer (Cube) — lives in THIS repo (`/cube`)
 The dispatch **metric layer** is code-defined in `/cube` (Cube Cloud deployment "MM Data Hub").
 Metrics are defined ONCE here; Steep and the future Hub MCP consume these governed definitions —

@@ -12,7 +12,10 @@
 //   grower-scoped          table; RLS on; authenticated policy referencing
 //                          semantic.current_consignor_ids() (or the legacy scalar
 //                          current_consignor_id()) OR'd with is_internal_claim();
-//                          cube_readonly read-all policy; grants authenticated+cube_readonly.
+//                          PLUS an additive auth0_grower_own_* policy referencing
+//                          semantic.auth0_consignor_ids() with NO internal branch (0050
+//                          grower-portal path); cube_readonly read-all policy; grants
+//                          authenticated+cube_readonly.
 //   internal-only          table; RLS on; authenticated policy = semantic.is_internal_claim();
 //                          cube policy; grants authenticated+cube_readonly.
 //   shared-reference       table; RLS on; authenticated using(true) policy; cube policy;
@@ -230,6 +233,9 @@ function assertPosture(r: Rel, e: RegistryEntry, grants: Set<string>, pols: Pol[
       const ok = apQual.some((q) =>
         (q.includes('current_consignor_ids()') || q.includes('current_consignor_id()')) && q.includes('is_internal_claim()'));
       if (!ok) errs.push(`no authenticated policy referencing current_consignor_ids()/current_consignor_id() OR is_internal_claim() (found: ${apQual.join(' | ') || 'none'})`);
+      // 0050: the additive Auth0 (grower-portal) path — issuer-pinned helper, no internal branch.
+      const auth0Ok = apQual.some((q) => q.includes('auth0_consignor_ids()') && !q.includes('is_internal_claim()'));
+      if (!auth0Ok) errs.push(`no additive auth0_grower policy referencing auth0_consignor_ids() without an internal branch (0050; found: ${apQual.join(' | ') || 'none'})`);
       break;
     }
     case 'internal-only': {
@@ -328,10 +334,11 @@ export async function sweep(c: PoolClient): Promise<boolean> {
   // ── A6 preflight: the fail-closed helpers must exist ────────────────────────
   const helpers = (await c.query(
     `select to_regprocedure('semantic.current_consignor_ids()')::text as ids,
-            to_regprocedure('semantic.is_internal_claim()')::text     as internal`,
+            to_regprocedure('semantic.is_internal_claim()')::text     as internal,
+            to_regprocedure('semantic.auth0_consignor_ids()')::text   as auth0`,
   )).rows[0]!;
-  if (!helpers.ids || !helpers.internal)
-    fail(`A6 helper functions missing: current_consignor_ids=${helpers.ids} is_internal_claim=${helpers.internal}`);
+  if (!helpers.ids || !helpers.internal || !helpers.auth0)
+    fail(`A6 helper functions missing: current_consignor_ids=${helpers.ids} is_internal_claim=${helpers.internal} auth0_consignor_ids=${helpers.auth0}`);
 
   // ── Registry sweep ──────────────────────────────────────────────────────────
   log(`\nlive relations: ${rels.length} · registry entries: ${Object.keys(REGISTRY).length}`);

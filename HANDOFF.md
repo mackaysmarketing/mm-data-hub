@@ -1,3 +1,69 @@
+# Handoff (2026-07-16): Auth0 third-party auth (grower-portal) — grower RLS second identity path
+
+Status: **✅ hub-side DB work built, applied to prod, proven. ⛔ third-party auth NOT enabled —
+BLOCKED on an mm-hub public-schema audit (details below); enabling is Tim's go/no-go.**
+Migration `0050` applied via MCP apply_migration. Push manual.
+
+## What landed
+- **`docs/mm-hub-auth0-integration.md`** — verbatim copy of the grower-portal brief (issuer
+  `https://grower-portal.au.auth0.com/`, verified live incl. trailing slash + JWKS; consignor claim
+  `https://grower-portal.mackays.com.au/consignor_ids`, a string array on both token types).
+- **Migration `0050_auth0_grower_rls`** (ADDITIVE): `semantic.auth0_consignor_ids()` — issuer-pinned
+  (exact match), array-only, per-element uuid-validated, de-duplicated, fail-closed; EXECUTE revoked
+  from PUBLIC, granted to authenticated only. Six additive `auth0_grower_own_*` policies on exactly
+  the 0026 grower-scoped set; the mm-hub `grower_own_*` policies untouched; NO internal branch.
+  **Trust partition:** `current_consignor_ids()` / `is_internal_claim()` now REFUSE app_metadata on
+  an Auth0-issued token (verbatim 0026/0010 bodies + one deny guard — adversarial review caught and
+  removed an accidental exception-block divergence in is_internal_claim). ⚠ FUTURE-ISSUER
+  INVARIANT: any additional third-party issuer requires extending the deny guards (CLAUDE.md).
+- **`scripts/auth0_rls_proof.ts`** (`npm run auth0:rls`) — self-deriving (fixtures = busiest
+  consignors present in dispatch+GP+NS; per-table non-triviality for BOTH growers). Run with
+  loaders quiescent.
+- **`scripts/rls_posture.ts`**: grower-scoped class now ALSO requires the additive auth0 policy;
+  A6 requires the new helper. Apply 0050 before running the suite (ordering coupling, documented).
+
+## Evidence
+- Pre-apply: 15-agent adversarial review workflow (5 lenses × verify) — 10 confirmed findings all
+  fixed or documented, 0 refuted-but-shipped; dry-run of the full DDL in a rolled-back txn green.
+- `auth0:rls` **81/81** (report `reports/auth0_rls_proof_2026-07-16.txt`): identity parity on all
+  5 grower views (Auth0 == mm-hub, 42,632 rows), wrong-iss/supabase-iss forgery 0-row, hostile
+  hybrid (Auth0 token + forged app_metadata.{consignor_ids,is_internal}) sees own rows only,
+  internal-only/etl-only/ungranted stay closed, legacy scalar token exact.
+- mm-hub path untouched: `rls:multifarm` **45/45** · `ft:dispatch:rls` 7/7 · `ns:rls` 7/7 ·
+  `ft:gp:rls` 14/14 · typecheck clean · tests 139/139.
+- `rls:posture`: all six grower-scoped relations PASS the new dual-policy assertion. Sweep overall
+  is 94/100 — the 6 FAILs are **pre-existing grower-register drift, NOT this change** (see below).
+
+## ⛔ Why third-party auth is NOT yet enabled (Tim's decision)
+Enabling it is PROJECT-level: every grower-portal Auth0 token (role=authenticated) becomes a valid
+authenticated session for mm-hub's `public` schema + storage too. Read-only audit findings:
+- **`public` has 7 RLS-OFF tables with FULL grants to authenticated AND anon** (`growers`,
+  `gr_banana_blocks`, `gr_block_parcel`, `gr_block_tags`, `gr_grower_crop_area`, `gr_grower_tags`,
+  `gr_parcels`) — already readable/WRITABLE with the anon key today, Auth0 or not. Fix in mm-hub.
+- mm-hub's `private.portal_*` policy helpers likely honor app_metadata with no issuer check — the
+  same hole 0050 closed for raw/core/semantic exists in `public` and only mm-hub can close it.
+- The tenant Action must pin `role=authenticated` (role claim maps to the Postgres role;
+  service_role would bypass all RLS).
+**To enable** (after mm-hub hardens): Dashboard → Authentication → Sign In/Providers → Third Party
+Auth → add Auth0, tenant `grower-portal`, region AU (or Management API
+`POST /v1/projects/uqzfkhsdyeokwnkpcxui/config/auth/third-party-auth`
+`{"oidc_issuer_url":"https://grower-portal.au.auth0.com/"}`). No management token on this machine.
+**Also**: add `semantic` to the API's exposed schemas (Settings → API) or grower-portal's REST
+reads of the grower views can't route; grants/RLS are already correct for that exposure.
+
+## Grower-readable surface (decision c)
+Auth0 growers read EXACTLY what mm-hub growers read (proven parity): the 5 semantic grower views
+(`grower_dispatch_detail`/`_shipped`, `grower_settlement`, `grower_gp_settlement`/`_load`) over the
+6 RLS-anchored relations, + shared-reference lookups. Internal-only/etl-only/ungranted fail closed.
+Recommend grower-portal consume the semantic views only.
+
+## Surfaced (pre-existing, out of scope, task chip spawned)
+Six unregistered relations in raw/core/semantic from the grower-register migrations (2026-07-13/14,
+applied outside this repo): `raw.atcm_crop_blocks_fnq`, `raw.qscf_lots_banana_belt`,
+`core.block_grower_tag`, `core.crop_block_parcel`, `core.parcel_grower_tag`,
+`semantic.grower_crop_area` (owner-rights view) — anon grants + anon ALL policies inside hub
+schemas (A4/A5 violations). Posture sweep stays red until classified + hardened.
+
 # Handoff (2026-07-13): WOW scan ingest — Q.Checkout Woolworths sell-through
 
 Status: **✅ pipeline built + proven end-to-end on the synthetic source; awaiting the real 303k
