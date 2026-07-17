@@ -76,6 +76,7 @@
     "cube:grower-name": "node --experimental-strip-types scripts/cube_grower_name_proof.ts",
     "cube:settlement": "node --experimental-strip-types scripts/cube_settlement_check.ts",
     "cube:shipped": "node --experimental-strip-types scripts/cube_shipped_check.ts",
+    "portal:verify": "node --experimental-strip-types scripts/grower_portal_fixes_verify.ts",
     "mcp:server": "node --experimental-strip-types mcp/server.ts",
     "mcp:proof": "node --experimental-strip-types scripts/mcp_proof.ts"
   },

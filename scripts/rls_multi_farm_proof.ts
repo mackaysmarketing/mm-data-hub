@@ -35,6 +35,7 @@ const TABLES = [
   'core.fact_settlement_bill',
   'core.fact_gp_settlement',
   'core.fact_gp_settlement_load',
+  'core.fact_load_sale',            // 7th grower-scoped relation (0054, grower-portal fix pack)
 ];
 // consignor column for each table (pallet is scoped through its load).
 const CONSIGNOR_EXPR: Record<string, string> = {
@@ -44,6 +45,7 @@ const CONSIGNOR_EXPR: Record<string, string> = {
   'core.fact_settlement_bill': 'consignor_id',
   'core.fact_gp_settlement': 'consignor_id',
   'core.fact_gp_settlement_load': 'consignor_id',
+  'core.fact_load_sale': 'consignor_id',
 };
 
 const results: { name: string; pass: boolean }[] = [];
@@ -165,7 +167,7 @@ async function main(): Promise<void> {
       const usesScalar = /current_consignor_id\(\)/.test(p.qual);
       check(`${p.policyname}: uses SET & not scalar`, usesSet && !usesScalar, p.qual.replace(/\s+/g, ' '));
     }
-    check('exactly 6 grower_own_* policies present', pol.rows.length === 6, `${pol.rows.length} found`);
+    check('exactly 7 grower_own_* policies present (0026 six + 0054 fact_load_sale)', pol.rows.length === 7, `${pol.rows.length} found`);
 
     // ── A7: internal token → full unfiltered counts (== baseline internal) ───────
     console.log('\n=== A7  internal token → full unfiltered count on every grower table ===');

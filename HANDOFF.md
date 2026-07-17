@@ -1,3 +1,62 @@
+# Handoff (2026-07-17): grower-portal fix pack (0053/0054/0055) — FIX 1–7 delivered
+
+Status: **✅ built, applied to prod via MCP apply_migration, all proofs green.** Push manual.
+Input: grower-portal's handover doc ("mm-data-hub: fix instructions", 2026-07-18 their time).
+Cross-repo response for the portal side: `docs/grower-portal-fix-pack-response.md`.
+
+## What landed
+- **`0053_core_gp_settlement_dates` (FIX 1):** `date_from/date_to` derived from `week_no`
+  (ISO-week Monday, year = latest week-start ≤ coalesce(payable_on, created_on)) — the SOURCE
+  columns are null on 1,329/1,332 and garbage on the 3 TEST rows. 1,327/1,332 derive, 0
+  misaligned, 5 null-week AG* schedules stay null + `dates_derived` flag surfaced on fact + view.
+  Test pair: 104 schedules, 0 null dates.
+- **`0054_core_fact_load_sale` (FIX 5/7.2):** load × customer fact denormalised at build time
+  from internal-only `fact_customer_invoice` × `crosswalk_customer_retail`; carries
+  `retailer_group` (never consignee_name), CN subtracts, share_of_load_gross windowed. The **7th
+  grower-scoped relation**: `grower_own_load_sale` + `auth0_grower_own_load_sale` + cube read-all.
+  Wired into `ar:core` (order: after fact_customer_invoice; `insight:core` refreshes the crosswalk).
+  12,940 rows / $206.0M; 141 pre-landing-window invoices surfaced as dropped; 0 unmapped retailers.
+- **`0055_semantic_grower_load_views` (FIX 2/4/6 + the FIX 5 view):**
+  - `semantic.clean_product_label()` + product cleaned in `grower_dispatch_shipped`/`_detail`
+    (raw stays verbatim; `product_raw` appended; ⚠ detail view's LIVE shape includes the 0022
+    origin-shed columns — `create or replace view` must preserve them).
+  - `semantic.grower_dispatch_load` — load grain + `consignment_status` (Not Consigned /
+    Consigned / Sold / Paid). **Connote = `manifest_no`** (no connote column exists anywhere in
+    FreshTrack — replica searched; 100% populated on the pair's shipped loads). Signals exposed;
+    global distribution Paid=10,807 / Sold=3,337 / Consigned=402 / Not Consigned=31.
+  - `semantic.grower_load_sale` — retailer/gross/share per (load, customer), grower-readable.
+- **Pinned-set updates:** `rls_posture.ts` (+3 registry entries, 103/103), `rls_multi_farm_proof.ts`
+  (7 grower_own_*), `auth0_rls_proof.ts` (7 auth0 policies, +2 grower views in B8, fixture
+  derivation now also requires fact_load_sale rows). CLAUDE.md "exactly six" wording updated.
+- **New proof: `npm run portal:verify`** (scripts/grower_portal_fixes_verify.ts) — 24 checks
+  mirroring the portal's acceptance queries, all self-deriving; report committed per run.
+
+## Evidence (all run 2026-07-17, loaders quiescent)
+- `portal:verify` **24/24** (pair = exactly **238** loads — the portal's number; Σboxes/Σweight tie
+  exactly; schedule 1329 → 2 loads, woolworths, deductions visible via grower token).
+- `rls:posture` **103/103 · 0 problems** · `rls:multifarm` **50/50** · `auth0:rls` **91/91**
+  (incl. B8 parity on both new views) · `ft:gp:rls` 14/14 · `ft:gp:reconcile` drift=PASS ·
+  typecheck clean · tests 139/139.
+
+## FIX 3 (public REST exposure) — audited, NO hub-side change (mm-hub owns public)
+- anon: **zero policies** on all 38 public tables → fail-closed everywhere (the broad default
+  grants are dead; recommend mm-hub strip them for hygiene, as this repo did in 0051).
+- Auth0 grower token (behavioral probe): identity-scoped tables **error closed** — `auth.uid()`
+  22P02-fails casting an `auth0|…` sub inside `private.portal_group_id()` → query aborts, 0 rows.
+- Residual: five `using(true)` authenticated-read tables — `retailers` (3 rows),
+  `distribution_centres` (15), `products`/`ft_products`/`product_retailer_mappings` (0 rows
+  today). An Auth0 grower CAN read those. mm-hub's call: accept as shared reference or gate.
+- `pm_price_snapshots`/`pm_run_log`: RLS on, no policies → fail-closed dead grants.
+
+## Deferred / notes
+- Cube exposure of the new load-grain/sale surfaces: not requested; add as ADDITIVE cubes later.
+- FIX 2 note: 484 in-scope pallets have no product/variety/crop → product NULL (portal renders
+  "—"); 0 of them belong to the test pair.
+- "Fully invoiced" on multi-customer loads is approximated by FreshTrack state seq ≥ 10 (no
+  per-line coverage measure exists); today every load has exactly 1 invoiced customer (12,940/12,940).
+- The 2 invoiced pair loads outside the load view = all-pallets-archived loads (view excludes them
+  by design; the sale view still shows them).
+
 # Handoff (2026-07-16b): grower-register posture (0052) — drift cleanup closed
 
 Status: **✅ done; `rls:posture` fully green (100/100 relations conform, 0 problems) for the first

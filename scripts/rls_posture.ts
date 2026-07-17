@@ -147,6 +147,7 @@ const REGISTRY: Record<string, RegistryEntry> = {
   'core.fact_settlement_bridge': { cls: 'internal-only', why: '0031' },
   'core.fact_revenue_charge':    { cls: 'internal-only', why: '0031' },
   'core.fact_customer_invoice':  { cls: 'internal-only', why: 'AR 0040 — customer book (internal); RLS fail-closed to internal' },
+  'core.fact_load_sale':         { cls: 'grower-scoped', why: 'grower-portal fix pack 0054 — retailer projection of the AR book at load×customer grain (consignee_name NOT carried); the 7th grower-scoped relation (0026 six + this)' },
   'core.fact_remittance_line':   { cls: 'internal-only', why: 'AR 0040 — remittance reconciliation (internal)' },
   'core.fact_retail_scan':       { cls: 'internal-only', why: 'Scan 0043 — retailer sell-through (internal)' },
   'core.wow_scan_weekly':        { cls: 'internal-only', why: 'WOW 0049 — Woolworths sell-through (internal)' },
@@ -177,8 +178,10 @@ const REGISTRY: Record<string, RegistryEntry> = {
     why: 'register parcel tags — staff read+write via mm-hub public.gr_grower_tags; 0052' },
 
   // ── semantic ───────────────────────────────────────────────────────────────
-  'semantic.grower_dispatch_detail':        { cls: 'semantic-invoker', invoker: true, why: '0008/0022; scope = raw dispatch/pallet + dim_grower RLS' },
-  'semantic.grower_dispatch_shipped':       { cls: 'semantic-invoker', invoker: true, why: '0021' },
+  'semantic.grower_dispatch_detail':        { cls: 'semantic-invoker', invoker: true, why: '0008/0022; scope = raw dispatch/pallet + dim_grower RLS; 0055 cleans product (+product_raw)' },
+  'semantic.grower_dispatch_shipped':       { cls: 'semantic-invoker', invoker: true, why: '0021; 0055 cleans product (+product_raw)' },
+  'semantic.grower_dispatch_load':          { cls: 'semantic-invoker', invoker: true, why: '0055 load-grain dispatch + consignment_status (fix pack FIX 4+6); scope = shipped view chain + grower-scoped facts' },
+  'semantic.grower_load_sale':              { cls: 'semantic-invoker', invoker: true, why: '0055 retailer/sales per load (fix pack FIX 5+7); scope = fact_load_sale RLS (0054)' },
   'semantic.grower_settlement':             { cls: 'semantic-invoker', invoker: true, why: '0016; scope = fact_settlement_bill RLS' },
   'semantic.grower_gp_settlement':          { cls: 'semantic-invoker', invoker: true, why: '0020' },
   'semantic.grower_gp_settlement_load':     { cls: 'semantic-invoker', invoker: true, why: '0020' },

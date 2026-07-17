@@ -6,8 +6,9 @@
 // Proves migration 0050 against the LIVE hub:
 //   B1  auth0_consignor_ids(): array→set, de-duplicated, uuid-validated; honored ONLY under
 //       iss = https://grower-portal.au.auth0.com/ (wrong/missing iss → empty); never errors.
-//   B2  exactly 6 auth0_grower_own_* policies live; each quals on auth0_consignor_ids(),
-//       none carries is_internal_claim(); the 6 grower_own_* mm-hub policies are untouched.
+//   B2  exactly 7 auth0_grower_own_* policies live (0026 six + 0054 fact_load_sale); each quals
+//       on auth0_consignor_ids(), none carries is_internal_claim(); the 7 grower_own_* mm-hub
+//       policies match the pinned (table|name) set.
 //   B3  an Auth0 [A] token reproduces the owner-derived per-consignor counts exactly; B/C = 0.
 //   B4  an Auth0 [A,B] token = A+B rows only.
 //   B5  forgery fails closed: the namespaced claim under a WRONG issuer (incl. the hub's own
@@ -43,6 +44,7 @@ const TABLES = [
   'core.fact_settlement_bill',
   'core.fact_gp_settlement',
   'core.fact_gp_settlement_load',
+  'core.fact_load_sale',            // 7th grower-scoped relation (0054, grower-portal fix pack)
 ];
 const CONSIGNOR_EXPR: Record<string, string> = {
   'raw.ft_dispatch_load': 'consignor_id',
@@ -51,10 +53,13 @@ const CONSIGNOR_EXPR: Record<string, string> = {
   'core.fact_settlement_bill': 'consignor_id',
   'core.fact_gp_settlement': 'consignor_id',
   'core.fact_gp_settlement_load': 'consignor_id',
+  'core.fact_load_sale': 'consignor_id',
 };
 const GROWER_VIEWS = [
   'semantic.grower_dispatch_detail',
   'semantic.grower_dispatch_shipped',
+  'semantic.grower_dispatch_load',      // 0055 (fix pack FIX 4+6)
+  'semantic.grower_load_sale',          // 0055 (fix pack FIX 5+7)
   'semantic.grower_settlement',
   'semantic.grower_gp_settlement',
   'semantic.grower_gp_settlement_load',
@@ -127,14 +132,16 @@ async function main(): Promise<void> {
   try {
     // ── B0: fixtures + expected counts DERIVED IN-RUN as the table owner ────────
     log('=== B0  fixtures + expected counts derived in-run (no hardcoded baselines) ===');
-    // A, B = the two busiest dispatch consignors that ALSO have GP settlement rows (so every
-    // grower table asserts non-trivially); C = the busiest consignor distinct from both.
+    // A, B = the two busiest dispatch consignors that ALSO have GP settlement rows AND invoiced
+    // loads (so every grower table — incl. core.fact_load_sale, 0054 — asserts non-trivially);
+    // C = the busiest consignor distinct from both.
     const fx = await c.query<{ id: string }>(
       `select d.consignor_id as id
          from raw.ft_dispatch_load d
         where d.consignor_id is not null
           and exists (select 1 from core.fact_gp_settlement g where g.consignor_id = d.consignor_id)
           and exists (select 1 from core.fact_settlement_bill s where s.consignor_id = d.consignor_id)
+          and exists (select 1 from core.fact_load_sale fl where fl.consignor_id = d.consignor_id)
         group by 1 order by count(*) desc limit 2`);
     if (fx.rows.length < 2) throw new Error('fixture derivation: need 2 consignors with dispatch+GP+NS rows');
     const A = fx.rows[0]!.id, B = fx.rows[1]!.id;
@@ -201,14 +208,15 @@ async function main(): Promise<void> {
     const pol = await c.query<{ tbl: string; policyname: string; qual: string; roles: string }>(
       `select schemaname||'.'||tablename tbl, policyname, qual, roles::text roles
          from pg_policies where policyname like 'auth0\\_grower\\_own\\_%' escape '\\' order by tbl`);
-    check('exactly 6 auth0_grower_own_* policies', pol.rows.length === 6, `${pol.rows.length} found`);
-    check('auth0 policies cover exactly the six grower-scoped relations',
+    check('exactly 7 auth0_grower_own_* policies (0026 six + 0054 fact_load_sale)', pol.rows.length === 7, `${pol.rows.length} found`);
+    check('auth0 policies cover exactly the grower-scoped relation set',
       [...pol.rows.map((p) => p.tbl)].sort().join(',') === [...TABLES].sort().join(','));
     // Pin the mm-hub policy set as exact (tbl, policyname) pairs, not just a count.
     const HUB_POLICY_PAIRS = [
       'core.dim_grower|grower_own_dim',
       'core.fact_gp_settlement|grower_own_gp_settlement',
       'core.fact_gp_settlement_load|grower_own_gp_settlement_load',
+      'core.fact_load_sale|grower_own_load_sale',
       'core.fact_settlement_bill|grower_own_settlement',
       'raw.ft_dispatch_load|grower_own_loads',
       'raw.ft_pallet|grower_own_pallets',
@@ -217,7 +225,7 @@ async function main(): Promise<void> {
     const hubPairs = (await c.query<{ pair: string }>(
       `select schemaname||'.'||tablename||'|'||policyname as pair
          from pg_policies where policyname like 'grower\\_own\\_%' escape '\\'`)).rows.map((r) => r.pair).sort();
-    check('mm-hub grower_own_* policies are exactly the 0026 six (table|name pairs)',
+    check('mm-hub grower_own_* policies are exactly the pinned seven (table|name pairs)',
       hubPairs.join(',') === [...HUB_POLICY_PAIRS].sort().join(','), hubPairs.join(' '));
     for (const p of pol.rows) {
       const q = p.qual.replace(/\s+/g, ' ');
@@ -227,7 +235,7 @@ async function main(): Promise<void> {
     const legacy = await c.query(
       `select count(*) n from pg_policies where policyname like 'grower\\_own\\_%' escape '\\'
         and qual like '%current_consignor_ids()%' and qual like '%is_internal_claim()%'`);
-    check('the 6 mm-hub grower_own_* policies remain live and unchanged in shape', Number(legacy.rows[0]!.n) === 6);
+    check('the 7 mm-hub grower_own_* policies remain live and unchanged in shape', Number(legacy.rows[0]!.n) === 7);
 
     // ── B3: Auth0 single-farm token == owner-derived counts ─────────────────────
     log('\n=== B3  Auth0 [A] token == owner-derived counts; B/C = 0 ===');

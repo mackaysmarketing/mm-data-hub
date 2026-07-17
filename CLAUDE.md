@@ -53,9 +53,12 @@ repos — coordinate first; full contract: `docs/mm-hub-auth0-integration.md`.
 - **`semantic.auth0_consignor_ids()`** honors that claim ONLY when `iss` equals the Auth0 issuer
   EXACTLY (incl. trailing slash); any other/missing issuer → empty set. Array-only, per-element
   uuid-validated, de-duplicated, fail-closed — the 0026 parsing rigor.
-- **ADDITIVE `auth0_grower_own_*` policies** on exactly the six grower-scoped relations (the 0026
-  set); the mm-hub `grower_own_*` policies are untouched (permissive policies OR). NO internal
-  branch — Auth0 tokens are grower-only, `is_internal` stays an mm-hub-only assertion.
+- **ADDITIVE `auth0_grower_own_*` policies** on every grower-scoped relation — the 0026 six plus
+  `core.fact_load_sale` (0054, grower-portal fix pack); the mm-hub `grower_own_*` policies are
+  untouched (permissive policies OR). NO internal branch — Auth0 tokens are grower-only,
+  `is_internal` stays an mm-hub-only assertion. **Every new grower-scoped relation needs BOTH
+  policies + the pinned-set updates in rls_posture / rls_multifarm / auth0:rls (they hard-pin the
+  set — that is the point).**
 - **Trust partition (0050 guards):** `current_consignor_ids()` / `is_internal_claim()` now REFUSE
   `app_metadata` on an Auth0-issued token — a tenant Action can never assert `is_internal` or the
   mm-hub claim shape. Each issuer's claims flow ONLY through its own helper; both fail closed.
@@ -78,6 +81,40 @@ repos — coordinate first; full contract: `docs/mm-hub-auth0-integration.md`.
 - **Proof:** `npm run auth0:rls` (self-deriving: identity-path parity, wrong-iss + supabase-iss
   forgery, hostile-hybrid app_metadata, mm-hub-untouched) · `rls:multifarm` · `rls:posture`
   (grower-scoped class now also REQUIRES the additive auth0 policy).
+
+## Grower-portal fix pack (0053/0054/0055, 2026-07-18) — the portal-facing surface upgrades
+Delivered against grower-portal's handover doc (FIX 1–7). Proof: **`npm run portal:verify`**
+(24 checks, self-deriving; test pair resolved by grower code LRCLA/LRCTU).
+- **GP settlement period (0053):** `raw.ft_gp_schedule.date_from/date_to` are null at the SOURCE
+  (3/1,332, all self-inconsistent TEST rows) → `core.refresh_fact_gp_settlement()` DERIVES them
+  from `week_no` (Monday of that ISO week — the pack-week calendar; year picked as the latest
+  week-start ≤ coalesce(payable_on, created_on)). `dates_derived` flags it; the 5 null-week AG*
+  schedules stay null, surfaced. Never trust source `date_from/date_to`.
+- **Product labels (0055):** cleaned in the SEMANTIC views only (raw lands faithfully, SPEC §9.7)
+  via `semantic.clean_product_label()` — strips `^{...}` + leading `[N]`, falls back
+  variety → crop → NULL (484 in-scope pallets have none of the three; surfaced). Verbatim kept as
+  `product_raw`. Trailing "- WOW" retailer hints KEPT (still load-bearing until retailer field
+  adoption). Applies to `grower_dispatch_shipped` + `grower_dispatch_detail`.
+- **`core.fact_load_sale` (0054) — the 7th grower-scoped relation:** load × customer grain,
+  denormalised AT BUILD TIME from internal-only `fact_customer_invoice` × `crosswalk_customer_retail`
+  (the 0020 pattern — grower invoker views must never touch internal relations). Carries
+  `retailer_group` (never `consignee_name`); CN invoices subtract. Rebuilt by **`ar:core`**
+  (run `insight:core` first after consignee churn or retailer_group goes stale). 141 invoices
+  whose loads predate the dispatch landing drop out (surfaced in `portal:verify`).
+- **`semantic.grower_dispatch_load` (0055):** one row per shipped load (non-archived pallets) +
+  **`consignment_status`** — Tim's grower lifecycle replacing dispatch/PD-PA states: Not Consigned →
+  Consigned → Sold → Paid. **Connote = `manifest_no`** (FreshTrack has NO connote column anywhere —
+  replica searched; manifest_no carries carrier con-note numbers, 100% populated on the pair's
+  shipped loads). Sold = state seq ≥ 10 OR landed invoice OR settled; Paid = ALL the load's
+  schedules PD (cash evidence wins), state ≥ 13 fallback only where GP lineage predates the landing.
+  All signals exposed as columns — every status count must stay explainable.
+- **`semantic.grower_load_sale` (0055):** load × customer for growers — retailer_group + gross +
+  share_of_load_gross; join `grower_gp_settlement_load` on `dispatch_load_id` for the FIX 7
+  drill-down (deduction_* columns were already there).
+- **`public` REST audit (FIX 3, 2026-07-17):** anon = zero policies (fail-closed; grants dead).
+  Auth0/grower tokens: identity-scoped mm-hub policies fail closed (`auth.uid()` cast errors on an
+  Auth0 sub); residual = five `using(true)` authenticated-read reference tables (retailers=3 rows,
+  distribution_centres=15, others empty). mm-hub's call to accept or tighten — NOT this repo's schema.
 
 ## Semantic layer (Cube) — lives in THIS repo (`/cube`)
 The dispatch **metric layer** is code-defined in `/cube` (Cube Cloud deployment "MM Data Hub").
