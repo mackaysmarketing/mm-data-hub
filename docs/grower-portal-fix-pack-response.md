@@ -66,9 +66,9 @@ dates. Customer identity (consignee id/name) is deliberately NOT exposed.
 
 ## FIX 6 — the four consignment statuses ✅
 `consignment_status` on `grower_dispatch_load`:
-- **Connote = `manifest_no`.** FreshTrack has NO connote column anywhere (we searched the full
-  replica schema); `manifest_no` carries the carrier consignment-note numbers and is 100%
-  populated on the pair's shipped loads. Exposed as `connote_no`.
+- **Connote = `manifest_no` (confirmed by Tim 2026-07-17).** FreshTrack has NO connote column
+  anywhere (we searched the full replica schema); `manifest_no` carries the carrier
+  consignment-note numbers and is 100% populated on the pair's shipped loads. Exposed as `connote_no`.
 - **Sold** = FreshTrack lifecycle ≥ Invoiced (seq 10 — the closest computable signal for your
   "fully invoiced" edge; no per-line coverage measure exists) OR a landed invoice OR membership in
   a settlement schedule. Today every invoiced load has exactly one customer, so the multi-customer

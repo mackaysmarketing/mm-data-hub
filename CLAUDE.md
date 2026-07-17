@@ -103,9 +103,9 @@ Delivered against grower-portal's handover doc (FIX 1–7). Proof: **`npm run po
   whose loads predate the dispatch landing drop out (surfaced in `portal:verify`).
 - **`semantic.grower_dispatch_load` (0055):** one row per shipped load (non-archived pallets) +
   **`consignment_status`** — Tim's grower lifecycle replacing dispatch/PD-PA states: Not Consigned →
-  Consigned → Sold → Paid. **Connote = `manifest_no`** (FreshTrack has NO connote column anywhere —
-  replica searched; manifest_no carries carrier con-note numbers, 100% populated on the pair's
-  shipped loads). Sold = state seq ≥ 10 OR landed invoice OR settled; Paid = ALL the load's
+  Consigned → Sold → Paid. **Connote = `manifest_no` — CONFIRMED by Tim 2026-07-17** (FreshTrack has
+  NO connote column anywhere — replica searched; manifest_no carries carrier con-note numbers, 100%
+  populated on the pair's shipped loads). Sold = state seq ≥ 10 OR landed invoice OR settled; Paid = ALL the load's
   schedules PD (cash evidence wins), state ≥ 13 fallback only where GP lineage predates the landing.
   All signals exposed as columns — every status count must stay explainable.
 - **`semantic.grower_load_sale` (0055):** load × customer for growers — retailer_group + gross +
