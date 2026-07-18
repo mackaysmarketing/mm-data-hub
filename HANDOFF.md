@@ -1,3 +1,57 @@
+# Handoff (2026-07-18): staff claim + grower directory (0056) — portal admin phase unblocked
+
+Status: **✅ built, applied to prod via MCP apply_migration, all proofs green.** Push manual.
+Input: grower-portal's "Ask to mm-data-hub: staff claim + staff RLS + grower directory"
+(Sprint 18). Cross-repo response (contract + amendments + evidence, portal-facing):
+`docs/grower-portal-staff-access-response.md`. **Tim signed off the posture change 2026-07-18**
+("Auth0 tokens are grower-only" → grower-OR-staff); his stated direction is ALL user auth on
+Auth0 — growers now, the internal staff hub (mm-hub) as a separate future change.
+
+## What landed
+- **`0056_auth0_staff_rls`:** `semantic.auth0_is_staff()` (issuer-pinned, STRICT boolean-true —
+  string `"true"`/`1`/`false`/array all fail closed; the 0050 rigor) + additive
+  `auth0_staff_read_*` policies on the 7 grower-scoped relations (THIRD permissive set —
+  `grower_own_*` and `auth0_grower_own_*` untouched, grower access bit-identical by
+  construction) + **`semantic.grower_directory`** (staff-only grower list for the portal's
+  selection modal: consignor_id, consignor_name, farm_code, is_active; is_grower + non-test
+  baked in; explicit `auth0_is_staff()` WHERE gate — REQUIRED because a grower's own dim_grower
+  row would otherwise show through the invoker view; mm-hub internal tokens also get 0 rows,
+  deliberate + asserted).
+- **Staff ≠ internal:** the claim never opens internal-only surfaces (customer book, AR, orders,
+  scan, insight) — proven (S4). `is_internal` stays mm-hub-issuer-only; 0050 deny guards
+  untouched; FUTURE-ISSUER invariant unchanged.
+- **Pinned sets:** `rls_posture.ts` (grower-scoped class now REQUIRES a policy quals exactly
+  `semantic.auth0_is_staff()`; `grower_directory` registered semantic-invoker; helper in the A6
+  preflight) · `auth0_rls_proof.ts` (S1–S5: helper semantics, policy pins, staff read-all +
+  view parity vs mm-hub internal, staff≠internal, directory) · CLAUDE.md (staff bullet; "ALL
+  THREE policies" rule for new grower-scoped relations). `rls_multi_farm_proof` unchanged
+  (name-prefixed pins unaffected — verified green, not assumed).
+
+## Evidence (all run 2026-07-18, loaders quiescent, self-derived in-run)
+- `auth0:rls` **140/140** (`reports/auth0_rls_proof_2026-07-18.txt`): staff == owner totals on
+  all 7 relations; staff == mm-hub-internal on all 7 grower views; hybrid staff+grower = staff
+  (policy OR); all forgery shapes → 0/false; directory staff=100 growers, everyone else 0.
+- `rls:posture` **104/104 · 0 problems** · `rls:multifarm` **50/50** · `portal:verify` **24/24**
+  (grower regression: pair still 238 loads / 104 schedules / 240 sales) · typecheck clean ·
+  tests 139/139.
+
+## Portal's turn (no hub work left on this ask)
+1. Flag `mm_staff: true` on tim@mackaysmarketing.com.au (Auth0 dashboard), deploy Action v3
+   (the ask's §2 diff — `role` stays hardcoded `authenticated`).
+2. Smoke: staff token → 7 views unscoped + 100-grower directory; grower token → 0 directory
+   rows + unchanged totals. No deploy-ordering hazard (both sides fail closed alone).
+3. Ops note (accepted residual): the Auth0 dashboard is now the staff-access control point —
+   keep tenant admins few + MFA'd; review tenant logs for app_metadata changes.
+
+## Deferred / notes
+- **mm-hub on Auth0** (Tim's stated direction): separate future change — needs an
+  Auth0→internal claim design (0056 deliberately opens no internal surface) + mm-hub app/public
+  audit. Not started.
+- Open question 2 of the ask (boolean vs role array): boolean shipped; future roles arrive as
+  additive claims. Q1: no hub-side grower grouping entity exists (`grower_key` = consignor_id
+  aliased); grouping lives in auth metadata — portal groups. Q3: the five `using(true)` public
+  tables stay mm-hub's call (FIX 3 audit unchanged).
+
 # Handoff (2026-07-17): grower-portal fix pack (0053/0054/0055) — FIX 1–7 delivered
 
 Status: **✅ built, applied to prod via MCP apply_migration, all proofs green.** Push manual.

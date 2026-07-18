@@ -1,0 +1,45 @@
+fixtures: LRCLA=019439a6-fb95-f543-c2e0-40d9f9b719fa LRCTU=019439a8-7d01-187c-89ff-970d71bdba6c
+
+=== F1  grower_gp_settlement.date_from/date_to (derived from week_no) ===
+  PASS  null-date rows (5) == underivable source rows (5)
+  PASS  every derived row aligns to week_no (misaligned=0)
+  PASS  every derived date_from is a Monday (violations=0)
+  PASS  derivation is near-total (1327/1332)
+  PASS  test pair via grower token: 104 schedules, 0 null dates — nulls=0
+
+=== F2  product labels cleaned (shipped + detail) ===
+  PASS  semantic.grower_dispatch_shipped: 0 coded / 0 empty-string / 0 leading-[N] — coded=0 empty=0 leading=0 null=484
+  PASS  semantic.grower_dispatch_detail: 0 coded / 0 empty-string / 0 leading-[N] — coded=0 empty=0 leading=0 null=53
+  PASS  null products (484) == pallets with no product/variety/crop (484) — surfaced, not invented
+  PASS  test pair via grower token: portal acceptance query == 0 — bad=0
+
+=== F4  grower_dispatch_load (load grain) ===
+  PASS  view rows (14577) == distinct non-archived (grower, load) pallet groups (14577)
+  PASS  Σboxes ties exactly (8884915) — pallet grain 8884915
+  PASS  Σnet_weight ties exactly (99919539.400000) — pallet grain 99919539.400000
+  PASS  test pair via grower token sees ONLY its rows (238, portal expects ~238)
+  PASS  no-claim token → 0 rows (fail closed) — got 0
+
+=== F5  retailer identity on grower-readable sales ===
+  PASS  fact rows (12940) == derived (load, consignee) groups (12940)
+  invoice accounting: 13255 load-linked invoices = 12940 grain rows + 141 whose loads predate the dispatch landing (surfaced, not silently dropped)
+  PASS  retailer_group parity vs crosswalk recomputed in-run (mismatched=0)
+  unmapped retailer_group rows: 0 (surfaced)
+  PASS  test pair via grower token: every sold load carries retailer_group (240 loads) — woolworths=240
+  PASS  pair retailer mix is woolworths-dominant (doc: "- WOW" hints) — woolworths=240
+
+=== F6  consignment_status (Tim's four states) ===
+  distribution: Consigned=402 Sold=3337 Not Consigned=31 Paid=10807
+  PASS  every load carries exactly one of the four values
+  PASS  every status is signal-consistent (re-derived from the exposed columns) — paid=0 sold=0 consigned=0 not=0
+  test pair distribution: Consigned=7 Paid=218 Sold=13
+
+=== F7  drill-down: schedule 1329 via grower token ===
+  PASS  schedule 1329 loads visible via grower token (2)
+  PASS  each load shows retailer + per-category deductions — G5021851 - 416: woolworths gross=31651.20 | G5021853 - 439: woolworths gross=49737.60
+
+=== RLS  new views fail closed; grower_load_sale isolation ===
+  PASS  grower_load_sale: no-claim → 0 — got 0
+  PASS  grower_load_sale: pair token sees only its rows — rows=240
+
+=== 24/24 checks passed ===

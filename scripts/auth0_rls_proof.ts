@@ -21,6 +21,19 @@
 //   B8  identity parity: every grower-facing semantic view returns IDENTICAL counts for the
 //       same consignor via Auth0 and via mm-hub app_metadata.
 //
+// Staff sections (migration 0056 — the .../staff claim, Tim-approved 2026-07-18):
+//   S1  auth0_is_staff(): strict boolean-true, issuer-pinned; "true"/1/false/nested/app_metadata
+//       forms and wrong/missing/Supabase issuers → false; never errors.
+//   S2  exactly 7 auth0_staff_read_* policies live, covering exactly the grower-scoped set; each
+//       quals EXACTLY semantic.auth0_is_staff() (no internal, no consignor branch); the
+//       grower_own_* and auth0_grower_own_* pinned sets are untouched (B2 re-asserts them).
+//   S3  a staff token reads ALL rows on all 7 relations (owner-derived totals) and every grower
+//       view matches the mm-hub internal-token counts; staff+grower hybrid = same (policy OR).
+//   S4  staff ≠ internal: internal-only relations return 0 under a staff token; etl-only and
+//       ungranted surfaces stay permission-denied.
+//   S5  grower_directory: staff == owner-derived grower list (non-test, is_grower); grower,
+//       mm-hub-internal (deliberate), and no-claim tokens all → 0 rows.
+//
 // Expected counts are DERIVED IN-RUN as the table owner (proof-style contract: hardcoded
 // baselines are FORBIDDEN); fixture consignors are resolved by live row counts, not uuids.
 // Run with loaders QUIESCENT: expected counts derive in B0 and are re-asserted in later
@@ -35,6 +48,7 @@ import { isMain } from '../src/lib/util.ts';
 
 const AUTH0_ISS = 'https://grower-portal.au.auth0.com/';
 const CLAIM = 'https://grower-portal.mackays.com.au/consignor_ids';
+const STAFF = 'https://grower-portal.mackays.com.au/staff';
 const SUPA_ISS = 'https://uqzfkhsdyeokwnkpcxui.supabase.co/auth/v1';
 
 const TABLES = [
@@ -77,6 +91,8 @@ function check(name: string, pass: boolean, detail = ''): void {
 const auth0Tok = (ids: string[], extra: object = {}) =>
   JSON.stringify({ iss: AUTH0_ISS, role: 'authenticated', [CLAIM]: ids, ...extra });
 const hubTok = (o: object) => JSON.stringify({ role: 'authenticated', ...o }); // no iss — the Cube/MCP/proof shape
+const staffTok = (extra: object = {}) =>
+  JSON.stringify({ iss: AUTH0_ISS, role: 'authenticated', [STAFF]: true, ...extra });
 
 async function underCtx<T>(c: PoolClient, claimsJson: string | null, fn: () => Promise<T>): Promise<T> {
   await c.query('begin');
@@ -329,6 +345,99 @@ async function main(): Promise<void> {
       check(`${v}: auth0=${viaAuth0} hub=${viaHub}`, viaAuth0 === viaHub);
     }
     check('view parity is non-trivial (rows > 0 across the grower views)', viewRowSum > 0, `sum=${viewRowSum}`);
+
+    // ── S1: auth0_is_staff() semantics — strict boolean, issuer-pinned, fail-closed ─────────
+    log('\n=== S1  semantic.auth0_is_staff() — strict boolean-true, issuer-pinned (0056) ===');
+    const staff = (raw: string) => fnUnder<boolean>(c, raw, 'semantic.auth0_is_staff()');
+    check('staff=true on the Auth0 issuer → true', (await staff(staffTok())) === true);
+    check('staff="true" (string) → false',
+      (await staff(JSON.stringify({ iss: AUTH0_ISS, role: 'authenticated', [STAFF]: 'true' }))) === false);
+    check('staff=1 (number) → false',
+      (await staff(JSON.stringify({ iss: AUTH0_ISS, role: 'authenticated', [STAFF]: 1 }))) === false);
+    check('staff=false → false',
+      (await staff(JSON.stringify({ iss: AUTH0_ISS, role: 'authenticated', [STAFF]: false }))) === false);
+    check('staff=[true] (array) → false',
+      (await staff(JSON.stringify({ iss: AUTH0_ISS, role: 'authenticated', [STAFF]: [true] }))) === false);
+    check('claim absent → false', (await staff(auth0Tok([]))) === false);
+    check('WRONG issuer → false',
+      (await staff(JSON.stringify({ iss: 'https://evil.example.com/', role: 'authenticated', [STAFF]: true }))) === false);
+    check('Supabase issuer → false',
+      (await staff(JSON.stringify({ iss: SUPA_ISS, role: 'authenticated', [STAFF]: true }))) === false);
+    check('MISSING issuer → false',
+      (await staff(JSON.stringify({ role: 'authenticated', [STAFF]: true }))) === false);
+    check('issuer without trailing slash → false',
+      (await staff(JSON.stringify({ iss: 'https://grower-portal.au.auth0.com', role: 'authenticated', [STAFF]: true }))) === false);
+    check('app_metadata.mm_staff (un-namespaced source form) → false',
+      (await staff(auth0Tok([], { app_metadata: { mm_staff: true } }))) === false);
+    check('mm-hub internal token → false (staff is Auth0-issuer-only)',
+      (await staff(hubTok({ app_metadata: { is_internal: true } }))) === false);
+    check('no claims at all → false', (await staff('')) === false);
+    let sThrew = false; let sBad = true;
+    try { sBad = await staff('{not valid json'); } catch { sThrew = true; }
+    check('malformed claims JSON → false, never errors', !sThrew && sBad === false);
+
+    // ── S2: staff policy pins — additive third set; B2's pins already re-asserted above ──────
+    log('\n=== S2  policy shapes: exactly 7 auth0_staff_read_* (0056), quals the helper ALONE ===');
+    const spol = await c.query<{ tbl: string; policyname: string; qual: string; roles: string }>(
+      `select schemaname||'.'||tablename tbl, policyname, qual, roles::text roles
+         from pg_policies where policyname like 'auth0\\_staff\\_read\\_%' escape '\\' order by tbl`);
+    check('exactly 7 auth0_staff_read_* policies', spol.rows.length === 7, `${spol.rows.length} found`);
+    check('staff policies cover exactly the grower-scoped relation set',
+      [...spol.rows.map((p) => p.tbl)].sort().join(',') === [...TABLES].sort().join(','));
+    for (const p of spol.rows) {
+      const q = p.qual.replace(/\s+/g, ' ').trim();
+      check(`${p.policyname}: qual is exactly semantic.auth0_is_staff(), to authenticated`,
+        q === 'semantic.auth0_is_staff()' && p.roles.includes('authenticated'), q);
+    }
+
+    // ── S3: staff token reads ALL rows; hybrid staff+grower = same (policy OR) ───────────────
+    log('\n=== S3  staff token == owner-derived totals on all 7 relations + view parity ===');
+    for (const t of TABLES) {
+      const n = await count(c, staffTok(), t);
+      check(`${t}: staff=${n}`, n === EXPECTED[t]!.internal, `(expect ${EXPECTED[t]!.internal})`);
+    }
+    for (const v of GROWER_VIEWS) {
+      const viaStaff = await count(c, staffTok(), v);
+      const viaInternal = await count(c, hubTok({ app_metadata: { is_internal: true } }), v);
+      check(`${v}: staff=${viaStaff} == mm-hub internal=${viaInternal}`, viaStaff === viaInternal);
+    }
+    const hybrid = await count(c, staffTok({ [CLAIM]: [A] }), 'raw.ft_dispatch_load');
+    check('staff + grower [A] hybrid token still reads ALL loads (policies OR)',
+      hybrid === EXPECTED['raw.ft_dispatch_load']!.internal, `got ${hybrid}`);
+
+    // ── S4: staff ≠ internal — the claim never opens internal-only surfaces ──────────────────
+    log('\n=== S4  staff ≠ internal: internal-only stays closed under a staff token ===');
+    const staffInternalOnly = await count(c, staffTok(), 'core.fact_customer_invoice');
+    check(`internal-only core.fact_customer_invoice = 0 under staff (owner has ${internalOwner['core.fact_customer_invoice']})`,
+      staffInternalOnly === 0, `got ${staffInternalOnly}`);
+    const staffOrders = await count(c, staffTok(), 'semantic.order_headers');
+    check(`internal-gated semantic.order_headers = 0 under staff (owner has ${internalOwner['semantic.order_headers']})`,
+      staffOrders === 0, `got ${staffOrders}`);
+    check('is_internal_claim() = false under a staff token',
+      (await fnUnder<boolean>(c, staffTok(), 'semantic.is_internal_claim()')) === false);
+    check('etl-only raw.ft_gp_schedule stays permission-denied under staff',
+      (await countOrDenied(c, staffTok(), 'raw.ft_gp_schedule')) === 'denied');
+    check('ungranted semantic.retail_prices stays permission-denied under staff',
+      (await countOrDenied(c, staffTok(), 'semantic.retail_prices')) === 'denied');
+
+    // ── S5: grower_directory — staff-only; everyone else gets ZERO rows ──────────────────────
+    log('\n=== S5  semantic.grower_directory: staff-only (explicit gate) ===');
+    const dirOwner = Number((await c.query(
+      `select count(*) n from core.dim_grower
+        where is_grower is true and coalesce(is_test, false) = false`)).rows[0]!.n);
+    check('directory owner-derived expectation is non-trivial', dirOwner > 0, `${dirOwner} growers`);
+    const dirStaff = await count(c, staffTok(), 'semantic.grower_directory');
+    check(`staff token sees the full directory (${dirStaff})`, dirStaff === dirOwner, `(expect ${dirOwner})`);
+    const dirGrower = await count(c, auth0Tok([A]), 'semantic.grower_directory');
+    check('grower [A] token → 0 directory rows (no enumeration)', dirGrower === 0, `got ${dirGrower}`);
+    const dirInternal = await count(c, hubTok({ app_metadata: { is_internal: true } }), 'semantic.grower_directory');
+    check('mm-hub internal token → 0 directory rows (gate is staff-claim-only, deliberate)',
+      dirInternal === 0, `got ${dirInternal}`);
+    const dirNoClaim = await count(c, null, 'semantic.grower_directory');
+    check('no-claim token → 0 directory rows', dirNoClaim === 0, `got ${dirNoClaim}`);
+    const dirForged = await count(
+      c, JSON.stringify({ iss: SUPA_ISS, role: 'authenticated', [STAFF]: true }), 'semantic.grower_directory');
+    check('Supabase-iss token carrying the staff claim → 0 directory rows', dirForged === 0, `got ${dirForged}`);
 
     const failed = results.filter((r) => !r.pass);
     log(`\n=== ${results.length - failed.length}/${results.length} checks passed ===`);

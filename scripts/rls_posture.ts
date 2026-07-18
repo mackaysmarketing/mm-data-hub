@@ -14,8 +14,9 @@
 //                          current_consignor_id()) OR'd with is_internal_claim();
 //                          PLUS an additive auth0_grower_own_* policy referencing
 //                          semantic.auth0_consignor_ids() with NO internal branch (0050
-//                          grower-portal path); cube_readonly read-all policy; grants
-//                          authenticated+cube_readonly.
+//                          grower-portal path); PLUS an additive auth0_staff_read_* policy
+//                          quals exactly semantic.auth0_is_staff() (0056 staff path);
+//                          cube_readonly read-all policy; grants authenticated+cube_readonly.
 //   internal-only          table; RLS on; authenticated policy = semantic.is_internal_claim();
 //                          cube policy; grants authenticated+cube_readonly.
 //   shared-reference       table; RLS on; authenticated using(true) policy; cube policy;
@@ -182,6 +183,8 @@ const REGISTRY: Record<string, RegistryEntry> = {
   'semantic.grower_dispatch_shipped':       { cls: 'semantic-invoker', invoker: true, why: '0021; 0055 cleans product (+product_raw)' },
   'semantic.grower_dispatch_load':          { cls: 'semantic-invoker', invoker: true, why: '0055 load-grain dispatch + consignment_status (fix pack FIX 4+6); scope = shipped view chain + grower-scoped facts' },
   'semantic.grower_load_sale':              { cls: 'semantic-invoker', invoker: true, why: '0055 retailer/sales per load (fix pack FIX 5+7); scope = fact_load_sale RLS (0054)' },
+  'semantic.grower_directory':              { cls: 'semantic-invoker', invoker: true,
+    why: '0056 staff-only grower list (portal selection modal/onboarding) — explicit auth0_is_staff() WHERE gate (0035 rationale) over dim_grower; grower/mm-hub/Cube/MCP contexts all get 0 rows' },
   'semantic.grower_settlement':             { cls: 'semantic-invoker', invoker: true, why: '0016; scope = fact_settlement_bill RLS' },
   'semantic.grower_gp_settlement':          { cls: 'semantic-invoker', invoker: true, why: '0020' },
   'semantic.grower_gp_settlement_load':     { cls: 'semantic-invoker', invoker: true, why: '0020' },
@@ -258,6 +261,10 @@ function assertPosture(r: Rel, e: RegistryEntry, grants: Set<string>, pols: Pol[
       // 0050: the additive Auth0 (grower-portal) path — issuer-pinned helper, no internal branch.
       const auth0Ok = apQual.some((q) => q.includes('auth0_consignor_ids()') && !q.includes('is_internal_claim()'));
       if (!auth0Ok) errs.push(`no additive auth0_grower policy referencing auth0_consignor_ids() without an internal branch (0050; found: ${apQual.join(' | ') || 'none'})`);
+      // 0056: the additive Auth0 STAFF path — the qual is the strict-boolean helper ALONE
+      // (no internal branch, no consignor branch; staff privilege composes by policy OR).
+      const staffOk = apQual.some((q) => q === 'semantic.auth0_is_staff()');
+      if (!staffOk) errs.push(`no additive auth0_staff policy whose qual is exactly semantic.auth0_is_staff() (0056; found: ${apQual.join(' | ') || 'none'})`);
       break;
     }
     case 'internal-only': {
@@ -357,10 +364,11 @@ export async function sweep(c: PoolClient): Promise<boolean> {
   const helpers = (await c.query(
     `select to_regprocedure('semantic.current_consignor_ids()')::text as ids,
             to_regprocedure('semantic.is_internal_claim()')::text     as internal,
-            to_regprocedure('semantic.auth0_consignor_ids()')::text   as auth0`,
+            to_regprocedure('semantic.auth0_consignor_ids()')::text   as auth0,
+            to_regprocedure('semantic.auth0_is_staff()')::text        as staff`,
   )).rows[0]!;
-  if (!helpers.ids || !helpers.internal || !helpers.auth0)
-    fail(`A6 helper functions missing: current_consignor_ids=${helpers.ids} is_internal_claim=${helpers.internal} auth0_consignor_ids=${helpers.auth0}`);
+  if (!helpers.ids || !helpers.internal || !helpers.auth0 || !helpers.staff)
+    fail(`A6 helper functions missing: current_consignor_ids=${helpers.ids} is_internal_claim=${helpers.internal} auth0_consignor_ids=${helpers.auth0} auth0_is_staff=${helpers.staff}`);
 
   // ── Registry sweep ──────────────────────────────────────────────────────────
   log(`\nlive relations: ${rels.length} · registry entries: ${Object.keys(REGISTRY).length}`);

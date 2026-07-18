@@ -55,10 +55,22 @@ repos — coordinate first; full contract: `docs/mm-hub-auth0-integration.md`.
   uuid-validated, de-duplicated, fail-closed — the 0026 parsing rigor.
 - **ADDITIVE `auth0_grower_own_*` policies** on every grower-scoped relation — the 0026 six plus
   `core.fact_load_sale` (0054, grower-portal fix pack); the mm-hub `grower_own_*` policies are
-  untouched (permissive policies OR). NO internal branch — Auth0 tokens are grower-only,
-  `is_internal` stays an mm-hub-only assertion. **Every new grower-scoped relation needs BOTH
-  policies + the pinned-set updates in rls_posture / rls_multifarm / auth0:rls (they hard-pin the
-  set — that is the point).**
+  untouched (permissive policies OR). NO internal branch — Auth0 tokens are grower-OR-STAFF
+  (0056, below), `is_internal` stays an mm-hub-only assertion. **Every new grower-scoped relation
+  needs ALL THREE policies (grower_own_* + auth0_grower_own_* + auth0_staff_read_*) + the
+  pinned-set updates in rls_posture / rls_multifarm / auth0:rls (they hard-pin the set — that is
+  the point).**
+- **STAFF claim (0056, Tim-approved 2026-07-18; direction = ALL user auth moves to Auth0):**
+  `https://grower-portal.mackays.com.au/staff` = boolean `true` (absence IS the negative), minted
+  by the same Action from Auth0 `app_metadata.mm_staff === true`. `semantic.auth0_is_staff()` —
+  issuer-pinned, STRICT boolean-true, fail-closed — quals the additive `auth0_staff_read_*`
+  policies (third permissive set, the 7 grower relations) + gates staff-only
+  `semantic.grower_directory` (explicit WHERE gate, 0035 pattern — grower/mm-hub/Cube/MCP
+  contexts get 0 rows). **Staff ≠ internal:** the claim NEVER opens internal-only surfaces
+  (customer book, AR, scan, insight). Accepted residual: an Auth0 tenant admin flipping
+  `mm_staff` = read of the whole grower surface — keep the tenant admin set small + MFA'd.
+  Moving the internal staff hub (mm-hub) itself onto Auth0 is the stated direction but a
+  SEPARATE future change (it would need an Auth0→internal claim design; not 0056).
 - **Trust partition (0050 guards):** `current_consignor_ids()` / `is_internal_claim()` now REFUSE
   `app_metadata` on an Auth0-issued token — a tenant Action can never assert `is_internal` or the
   mm-hub claim shape. Each issuer's claims flow ONLY through its own helper; both fail closed.
