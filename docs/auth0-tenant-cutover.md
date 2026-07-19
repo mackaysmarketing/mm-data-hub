@@ -40,9 +40,10 @@ inert (proven, T1).
     audience so access tokens are JWTs. (If the OLD tenant used a different identifier string,
     nothing carries over anyway — the portal env changes regardless; this is the identifier
     going forward.)
-  - Post-login Action **`mackays-claims`** created + built (v1) — consignor_ids + staff +
-    hub_role + staff-MFA, `role=authenticated` hardcoded. Reference copy below; the deployed
-    Action is owned by the grower-portal repo going forward.
+  - Post-login Action **`mackays-claims`** created + deployed (v2) — consignor_ids + staff +
+    hub_role + staff-MFA with remember-browser (~30-day re-challenge per browser),
+    `role=authenticated` hardcoded. Reference copy below; the deployed Action is owned by the
+    grower-portal repo going forward.
 
 ## ⬜ REMAINING (in order)
 
@@ -85,9 +86,11 @@ inert (proven, T1).
       api.accessToken.setCustomClaim(`${NS}/hub_role`, md.hub_role);
     }
 
-    // D3: MFA for anyone with staff-tier metadata; growers unaffected.
+    // D3: MFA for anyone with staff-tier metadata; growers unaffected. allowRememberBrowser
+    // lets each user tick "remember this browser" (~30 days per browser; new device/incognito
+    // always challenges) — without it, staff would be challenged on EVERY login (v2 change).
     if (md.mm_staff === true || md.mm_internal === true || typeof md.hub_role === "string") {
-      api.multifactor.enable("any");
+      api.multifactor.enable("any", { allowRememberBrowser: true });
     }
   };
   ```
