@@ -20,11 +20,17 @@ connections + transaction-local `set_config`; no Supabase JWTs, no data-hub RLS 
 - Claim namespace: `https://grower-portal.mackays.com.au/` — existing claims:
   `…/consignor_ids` (string array, live), `…/staff` (boolean true, hub honors it as of
   migration 0056; the portal's Action v3 deploy is pending).
-- **Staff-hub application: NOT yet created** (Phase A pending — Auth0 access wasn't available
-  from the hub session). When created (dashboard: Applications → Create, Regular Web App),
-  record the client_id HERE. Dev callback `http://localhost:3000/api/auth/callback` + logout
-  `http://localhost:3000`; add each app's real port/domain (Vercel) as you go. One application
-  can serve both apps, or create one each — your call; record both if two.
+- **Staff-hub application: CREATED 2026-07-19** — "Mackays Hub (staff)", Regular Web App,
+  OIDC-conformant, RS256.
+  - client_id: `hp5rUj7broeZ3Uk7RH0teWpLKwLwl2DU`
+  - client_secret: NOT recorded anywhere — read it from the Auth0 dashboard (Applications →
+    Mackays Hub (staff) → Settings) into each app's env (`AUTH0_CLIENT_SECRET`); never commit.
+  - Dev callbacks registered: `http://localhost:3000/api/auth/callback` + `:3001`; logout URLs
+    `http://localhost:3000` + `:3001`. **Add the real Vercel domains** (callback + logout) when
+    the apps deploy. One application serves both apps; split into two later only if their
+    session policies diverge.
+  - Hygiene, first session: trim `grant_types` to `authorization_code` + `refresh_token`
+    (Auth0's default added `implicit` and `client_credentials` — neither is needed).
 
 ## First commit (do this before any code)
 Update this repo's own docs — `crm/CLAUDE.md` (§Auth), `returns-estimator-module/docs/ARCHITECTURE.md`

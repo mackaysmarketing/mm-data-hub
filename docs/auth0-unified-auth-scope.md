@@ -144,11 +144,11 @@ When triggered:
   claim by an ADDITIVE Action update (v4 — coordinate with grower-portal, whose v3 staff-claim
   deploy is still pending). A roles-array claim may replace these later, additively.
 - **D3 — Tenant hardening: yes** — MFA required for `mm_staff`/`mm_internal` users, admin list
-  ≤ 2–3, log streaming on. Status: **pending dashboard access** — the Auth0 connector in the
-  hub session is unauthenticated and no auth0 CLI is installed, so Phase A's actions (incl.
-  creating the staff-hub application) are a Tim-side dashboard checklist or a follow-up session
-  after the connector is re-authorized. Record the new application's client_id in
-  `docs/mm-hub-auth0-login-kickoff.md` when created.
+  ≤ 2–3, log streaming on. Status: the staff-hub **application is CREATED** (2026-07-19,
+  client_id `hp5rUj7broeZ3Uk7RH0teWpLKwLwl2DU` — details in
+  `docs/mm-hub-auth0-login-kickoff.md`). MFA policy, admin-list review, and log streaming are
+  dashboard-only settings (no API surface in the session's connector) — **still on Tim's
+  dashboard checklist.**
 - **D4 — Legacy app code location: NOT on this machine** (swept `C:\dev` for its identifiers —
   `portal_is_internal`, `gr_block_tags`, `hub_users`; only documentation in this repo matches).
   Tim to name the repo/host before Phase E retirement planning; nothing else blocks on it.
