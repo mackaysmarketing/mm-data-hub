@@ -134,18 +134,26 @@ When triggered:
   lands (internal data, not just grower data). MFA + tiny admin set + reviewable logs (Phase A)
   is the mitigation — this is the design, per Tim's direction, not an accident.
 
-## Decisions needed (recommendations included — "go with recommendations" is enough)
-- **D1 — Legacy app: retire or migrate?** Recommend **retire** (Phase E as written). This is
-  the biggest fork; everything else proceeds identically either way.
-- **D2 — Role model in Auth0.** Recommend a single namespaced flags approach continuing 0056:
-  `mm_staff` (portal staff, live) + `mm_internal` (hub internal, Phase D) + the hub-app role
-  (`hub_admin|admin|staff|grower_admin|grower`) as one more app_metadata field read by the
-  Phase B seam. A roles-array claim can replace these later, additively, when the portal's
-  user-management feature lands — don't build it speculatively now.
-- **D3 — Tenant hardening defaults.** Recommend: MFA required for staff/internal flags, admin
-  list ≤ 2–3 people, log streaming on. (Phase A; can be done this week regardless of the rest.)
-- **D4 — Where does the legacy app's code live?** Not found on this machine — confirm the repo
-  so Phase E can be planned concretely.
+## Decisions — APPROVED by Tim 2026-07-19 ("go with your recommendations")
+- **D1 — Legacy app: RETIRE** (Phase E as written). No login migration for the old app; it
+  keeps Supabase email auth until the new hub + portal replace it, then email auth is disabled
+  for humans and `is_internal` becomes service-only (Cube/MCP).
+- **D2 — Role model: namespaced boolean flags + one role field**, continuing 0056:
+  `mm_staff` (live) + `mm_internal` (Phase D) + `hub_role`
+  (`hub_admin|admin|staff|grower_admin|grower`) in Auth0 app_metadata, surfaced as a namespaced
+  claim by an ADDITIVE Action update (v4 — coordinate with grower-portal, whose v3 staff-claim
+  deploy is still pending). A roles-array claim may replace these later, additively.
+- **D3 — Tenant hardening: yes** — MFA required for `mm_staff`/`mm_internal` users, admin list
+  ≤ 2–3, log streaming on. Status: **pending dashboard access** — the Auth0 connector in the
+  hub session is unauthenticated and no auth0 CLI is installed, so Phase A's actions (incl.
+  creating the staff-hub application) are a Tim-side dashboard checklist or a follow-up session
+  after the connector is re-authorized. Record the new application's client_id in
+  `docs/mm-hub-auth0-login-kickoff.md` when created.
+- **D4 — Legacy app code location: NOT on this machine** (swept `C:\dev` for its identifiers —
+  `portal_is_internal`, `gr_block_tags`, `hub_users`; only documentation in this repo matches).
+  Tim to name the repo/host before Phase E retirement planning; nothing else blocks on it.
+
+Phase B kickoff handover for the mm-hub repo: `docs/mm-hub-auth0-login-kickoff.md`.
 
 ## Suggested sequence and sizing
 | Phase | Owner | Size | Blocks on |
