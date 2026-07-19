@@ -20,13 +20,17 @@ connections + transaction-local `set_config`; no Supabase JWTs, no data-hub RLS 
 - Claim namespace: `https://mackaysmarketing.com.au` — claims: `…/consignor_ids` (string
   array), `…/staff` (boolean true), `…/hub_role` (this doc). The hub's RLS already honors this
   issuer+namespace (migration 0057, proven).
-- **Staff-hub application: recreate on the NEW tenant** (the 2026-07-19 app on the old tenant
-  is void — old-tenant apps die with the cutover). Regular Web App, dev callbacks
-  `http://localhost:3000/api/auth/callback` + `:3001`, logout `http://localhost:3000` +
-  `:3001`; add Vercel domains at deploy; trim grant_types to `authorization_code` +
-  `refresh_token`. Record the new client_id HERE when created (cutover runbook step 2);
-  client_secret stays in the Auth0 dashboard → each app's env, never committed. One application
-  serves both apps; split later only if session policies diverge.
+- **Staff-hub application: CREATED on the new tenant 2026-07-20** — "Mackays Hub (staff)",
+  Regular Web App, OIDC-conformant, RS256.
+  - client_id: `3RSODfrlKAWvEIXS7NNqgJoiZaLgW38o`
+  - client_secret: Auth0 dashboard (Applications → Mackays Hub (staff) → Settings) → each
+    app's env (`AUTH0_CLIENT_SECRET`); never commit.
+  - Dev callbacks `http://localhost:3000/api/auth/callback` + `:3001`, logout
+    `http://localhost:3000` + `:3001`; add Vercel domains at deploy; first session hygiene:
+    trim grant_types to `authorization_code` + `refresh_token`. One application serves both
+    apps; split later only if session policies diverge.
+  - API audience (if the hub apps ever call Supabase REST with user tokens):
+    `https://uqzfkhsdyeokwnkpcxui.supabase.co`.
 
 ## First commit (do this before any code)
 Update this repo's own docs — `crm/CLAUDE.md` (§Auth), `returns-estimator-module/docs/ARCHITECTURE.md`

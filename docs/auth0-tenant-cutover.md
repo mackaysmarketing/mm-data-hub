@@ -27,26 +27,34 @@ inert (proven, T1).
 - [x] Proofs: `auth0:rls` **188/188** (T1–T3: new-issuer identity/staff/guards/parity +
   cross-namespace forgeries all inert; B/S re-prove the old path unchanged) · `rls:posture`
   104/104 · `rls:multifarm` 50/50.
+- [x] Connector re-authed to `mackaysmarketing` (Tim, 2026-07-20).
+- [x] **New tenant configured** (hub session via connector, 2026-07-20):
+  - "Grower Portal" — Regular Web App, client_id `jT38ddvo8XpDYdMho5X2p55eq1bmsnSS`;
+    callbacks localhost:3000 + `https://growers.mackaysmarketing.com.au/api/auth/callback`
+    (⚠ portal repo: verify the callback PATH against your Auth0 SDK's route and adjust in the
+    dashboard if yours differs). Secret: dashboard → portal env; never committed.
+  - "Mackays Hub (staff)" — Regular Web App, client_id `3RSODfrlKAWvEIXS7NNqgJoiZaLgW38o`;
+    localhost:3000/3001 dev callbacks (Vercel domains at deploy).
+  - API (audience): **`https://uqzfkhsdyeokwnkpcxui.supabase.co`** ("Mackays Data Hub
+    (Supabase)", RS256, consent skipped for first-party). Portal env sets this as the requested
+    audience so access tokens are JWTs. (If the OLD tenant used a different identifier string,
+    nothing carries over anyway — the portal env changes regardless; this is the identifier
+    going forward.)
+  - Post-login Action **`mackays-claims`** created + built (v1) — consignor_ids + staff +
+    hub_role + staff-MFA, `role=authenticated` hardcoded. Reference copy below; the deployed
+    Action is owned by the grower-portal repo going forward.
 
 ## ⬜ REMAINING (in order)
 
-### 1. Reconnect the Auth0 connector to `mackaysmarketing` (Tim)
-Tenant creation dropped the connector's login. Reconnect it choosing the NEW tenant so the hub
-session can do step 2 — or do step 2 by hand in the dashboard.
+### 1. Two dashboard clicks Auth0 gives no API for (Tim)
+- **Attach the Action:** Actions → Flows → Login → drag `mackays-claims` into the flow →
+  Apply. (Until this, logins mint NO claims — everything fails closed.)
+- **Enable an MFA factor:** Security → Multi-factor Auth → turn on One-time Password
+  (the Action's MFA call needs at least one factor enabled). Leave the tenant-wide policy on
+  "Never" — the Action enforces it for staff only.
+- While there (D3): tenant admin list ≤ 2–3; log streaming if the plan has it.
 
-### 2. Configure the new tenant (hub session via connector, else dashboard)
-- **Applications** (both were on the old tenant; recreate — old client_ids are void):
-  - "Grower Portal" — Regular Web App; copy the old app's callback/logout/origin URLs
-    (production `growers.mackaysmarketing.com.au` + localhost dev). New client_id/secret → the
-    portal repo's env.
-  - "Mackays Hub (staff)" — Regular Web App; localhost:3000/3001 dev callbacks (Vercel domains
-    at deploy). New client_id/secret → record in `docs/mm-hub-auth0-login-kickoff.md`.
-- **API (resource server):** replicate the old tenant's audience setup — the portal requests an
-  audience so its access tokens are JWTs (identifier is in the portal repo's Auth0 config; the
-  portal team knows it, or read it off the old tenant before parking it).
-- **Post-login Action** (ONE action, consolidating old v2 + the pending staff v3 + Phase B's
-  hub_role + the D3 MFA rule — the grower-portal repo owns it going forward; this is the
-  reference implementation):
+### Reference — the deployed Action code (v1, verbatim)
 
   ```js
   exports.onExecutePostLogin = async (event, api) => {
@@ -86,19 +94,18 @@ session can do step 2 — or do step 2 by hand in the dashboard.
 
   Deploy + attach to the Login flow. Also: Security → Multi-factor Auth → enable One-time
   Password (the Action's MFA call needs at least one factor on).
-- **Tenant hygiene (D3):** admin list ≤ 2–3, log streaming if the plan has it.
 
-### 3. Supabase third-party auth (Tim, Supabase dashboard — AFTER step 2)
+### 2. Supabase third-party auth (Tim, Supabase dashboard — AFTER step 1)
 `data_hub` project → Authentication → Third-party auth → add Auth0 tenant `mackaysmarketing`
 (AU). Hub-side both issuers are already live (0057), so there is no DB risk in any ordering.
 ⚠ If the dashboard permits only ONE Auth0 integration at a time, this becomes an atomic swap:
-do it together with step 4's portal redeploy in one sitting (minutes of grower downtime; with
+do it together with step 3's portal redeploy in one sitting (minutes of grower downtime; with
 today's handful of users, acceptable).
 Note: new-tenant tokens hit mm-hub's `public` schema exactly like old-tenant ones (the FIX 3
 audit conclusions carry over unchanged — `auth.uid()`-keyed tables error closed, the five
 `using(true)` reference tables stay readable).
 
-### 4. Portal repo: switch + users (grower-portal session)
+### 3. Portal repo: switch + users (grower-portal session)
 - Env: new domain/issuer, client_id/secret, audience; claim-namespace constant
   `https://grower-portal.mackays.com.au` → `https://mackaysmarketing.com.au` wherever the app
   reads its own claims (`lib/auth0.ts`, per their CLAUDE.md). Redeploy.
@@ -109,7 +116,11 @@ audit conclusions carry over unchanged — `auth.uid()`-keyed tables error close
 - Smoke: grower login sees own data only; staff login sees all 7 views + the 100-grower
   directory; no-claim user sees nothing. (DB-side equivalents already proven in T3.)
 
-### 5. Cleanup (hub session, AFTER the portal is stable on the new tenant)
+- Portal env facts: domain `mackaysmarketing.au.auth0.com` · client_id
+  `jT38ddvo8XpDYdMho5X2p55eq1bmsnSS` (secret from dashboard) · audience
+  `https://uqzfkhsdyeokwnkpcxui.supabase.co`.
+
+### 4. Cleanup (hub session, AFTER the portal is stable on the new tenant)
 - Remove `grower-portal` from Supabase third-party auth.
 - Hub migration **0058**: drop the old issuer + namespace from the four helpers (collapse the
   CASE to the single new tenant); trim the old-path proof sections/constants.
@@ -118,6 +129,6 @@ audit conclusions carry over unchanged — `auth.uid()`-keyed tables error close
   which was never used — with it).
 
 ## Invariants through the whole cutover
-Growers byte-identical on the old path until step 4 flips them; Cube/Hub-MCP/mm-hub service
+Growers byte-identical on the old path until step 3 flips them; Cube/Hub-MCP/mm-hub service
 contexts untouched (proven B7); `role=authenticated` always; both issuers fail closed
 independently; staff ≠ internal on both tenants (S4/T2).
