@@ -96,12 +96,12 @@ inert (proven, T1).
   Deploy + attach to the Login flow. Also: Security → Multi-factor Auth → enable One-time
   Password (the Action's MFA call needs at least one factor on).
 
-### 2. Supabase third-party auth (Tim, Supabase dashboard — AFTER step 1)
-`data_hub` project → Authentication → Third-party auth → add Auth0 tenant `mackaysmarketing`
-(AU). Hub-side both issuers are already live (0057), so there is no DB risk in any ordering.
-⚠ If the dashboard permits only ONE Auth0 integration at a time, this becomes an atomic swap:
-do it together with step 3's portal redeploy in one sitting (minutes of grower downtime; with
-today's handful of users, acceptable).
+### ~~2. Supabase third-party auth~~ ✅ DONE (Tim, 2026-07-20)
+Added as a SECOND Auth0 connection (`mackaysmarketing.au` → domain
+`mackaysmarketing.au.auth0.com`; JWKS verified live, 2 keys) — the old `grower-portal`
+connection stays beside it until cleanup, so no atomic swap was needed. Gotcha for the record:
+the dashboard field appends `.auth0.com`, so an AU tenant must be entered WITH the region
+suffix (`mackaysmarketing.au`), else the JWKS fetch fails.
 Note: new-tenant tokens hit mm-hub's `public` schema exactly like old-tenant ones (the FIX 3
 audit conclusions carry over unchanged — `auth.uid()`-keyed tables error closed, the five
 `using(true)` reference tables stay readable).
