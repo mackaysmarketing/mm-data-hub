@@ -45,15 +45,13 @@ inert (proven, T1).
     `role=authenticated` hardcoded. Reference copy below; the deployed Action is owned by the
     grower-portal repo going forward.
 
-## ⬜ REMAINING (in order)
+- [x] **Tim's dashboard clicks done (2026-07-20, per Tim):** `mackays-claims` (v2, with
+  remember-browser MFA) attached to the Login flow; One-time Password factor enabled
+  (tenant-wide policy stays "Never" — the Action enforces MFA for staff only). Action v2
+  verified `all_changes_deployed` via the connector; flow attachment is dashboard-only, taken
+  on Tim's word.
 
-### 1. Two dashboard clicks Auth0 gives no API for (Tim)
-- **Attach the Action:** Actions → Flows → Login → drag `mackays-claims` into the flow →
-  Apply. (Until this, logins mint NO claims — everything fails closed.)
-- **Enable an MFA factor:** Security → Multi-factor Auth → turn on One-time Password
-  (the Action's MFA call needs at least one factor enabled). Leave the tenant-wide policy on
-  "Never" — the Action enforces it for staff only.
-- While there (D3): tenant admin list ≤ 2–3; log streaming if the plan has it.
+## ⬜ REMAINING (in order)
 
 ### Reference — the deployed Action code (v1, verbatim)
 
@@ -113,9 +111,17 @@ audit conclusions carry over unchanged — `auth.uid()`-keyed tables error close
   `https://grower-portal.mackays.com.au` → `https://mackaysmarketing.com.au` wherever the app
   reads its own claims (`lib/auth0.ts`, per their CLAUDE.md). Redeploy.
 - Recreate users on the new tenant (the current user base is small — Tim to confirm exact
-  list): invite, set `app_metadata.consignor_ids` per grower; `mm_staff: true` on
-  tim@mackaysmarketing.com.au. Fresh passwords + MFA enrolment for staff — that's inherent to a
-  new tenant.
+  list): invite, set `app_metadata` per user (User Management → Users → pick user →
+  app_metadata). Fresh passwords + MFA enrolment for staff — inherent to a new tenant.
+  Ready-to-paste app_metadata:
+  - tim@mackaysmarketing.com.au (staff): `{ "mm_staff": true }`
+  - the test grower (LRCLA "L & R Collins - Lakeland" + LRCTU "L & R Collins - Tully"):
+    ```json
+    { "consignor_ids": ["019439a6-fb95-f543-c2e0-40d9f9b719fa",
+                        "019439a8-7d01-187c-89ff-970d71bdba6c"] }
+    ```
+  - any other grower: `consignor_ids` uuids come from `core.dim_grower` by grower code (ask
+    the hub session).
 - Smoke: grower login sees own data only; staff login sees all 7 views + the 100-grower
   directory; no-claim user sees nothing. (DB-side equivalents already proven in T3.)
 
