@@ -50,6 +50,13 @@ third-party auth (project config) accepts those RS256 JWTs beside mm-hub's own; 
 arrives as the NAMESPACED TOP-LEVEL claim **`https://grower-portal.mackays.com.au/consignor_ids`**
 (string array, set by the tenant's post-login Action). Renaming claim/issuer = breaking for both
 repos — coordinate first; full contract: `docs/mm-hub-auth0-integration.md`.
+- **⚠ TENANT CUTOVER IN PROGRESS (0057, 2026-07-20):** the properly-named production tenant
+  **`mackaysmarketing`** (AU; issuer `https://mackaysmarketing.au.auth0.com/`; claim namespace
+  `https://mackaysmarketing.com.au`) is replacing `grower-portal` (tenants can't be renamed).
+  All four claim helpers resolve namespace BY ISSUER and honor each issuer's claims ONLY under
+  its own namespace; the app_metadata deny guards refuse BOTH Auth0 issuers (the FUTURE-ISSUER
+  invariant compliance case). Runbook + remaining steps: `docs/auth0-tenant-cutover.md`. After
+  cutover, 0058 drops the old issuer/namespace and this section is rewritten single-tenant.
 - **`semantic.auth0_consignor_ids()`** honors that claim ONLY when `iss` equals the Auth0 issuer
   EXACTLY (incl. trailing slash); any other/missing issuer → empty set. Array-only, per-element
   uuid-validated, de-duplicated, fail-closed — the 0026 parsing rigor.

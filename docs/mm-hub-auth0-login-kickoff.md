@@ -12,25 +12,21 @@ your own code documents: the dev-cookie shim (`mm_dev_user`) gives way to an Aut
 pages/routes) keeps its shape. Your database access model does not change — server-side
 connections + transaction-local `set_config`; no Supabase JWTs, no data-hub RLS work.
 
-## Tenant facts (stable — coordinate before changing ANY of these)
-- Tenant: `grower-portal` (Auth0, AU region) — yes, the name says grower; it is now the
-  company login tenant. Renaming tenant/issuer = breaking for every consumer; don't.
-- Issuer: `https://grower-portal.au.auth0.com/` · JWKS:
-  `https://grower-portal.au.auth0.com/.well-known/jwks.json` · RS256.
-- Claim namespace: `https://grower-portal.mackays.com.au/` — existing claims:
-  `…/consignor_ids` (string array, live), `…/staff` (boolean true, hub honors it as of
-  migration 0056; the portal's Action v3 deploy is pending).
-- **Staff-hub application: CREATED 2026-07-19** — "Mackays Hub (staff)", Regular Web App,
-  OIDC-conformant, RS256.
-  - client_id: `hp5rUj7broeZ3Uk7RH0teWpLKwLwl2DU`
-  - client_secret: NOT recorded anywhere — read it from the Auth0 dashboard (Applications →
-    Mackays Hub (staff) → Settings) into each app's env (`AUTH0_CLIENT_SECRET`); never commit.
-  - Dev callbacks registered: `http://localhost:3000/api/auth/callback` + `:3001`; logout URLs
-    `http://localhost:3000` + `:3001`. **Add the real Vercel domains** (callback + logout) when
-    the apps deploy. One application serves both apps; split into two later only if their
-    session policies diverge.
-  - Hygiene, first session: trim `grant_types` to `authorization_code` + `refresh_token`
-    (Auth0's default added `implicit` and `client_credentials` — neither is needed).
+## Tenant facts (UPDATED 2026-07-20 — tenant cutover; coordinate before changing ANY of these)
+- Tenant: **`mackaysmarketing`** (Auth0, AU region) — the company login tenant, replacing the
+  old `grower-portal` tenant (cutover runbook: `mm-data-hub/docs/auth0-tenant-cutover.md`).
+- Issuer: `https://mackaysmarketing.au.auth0.com/` · JWKS:
+  `https://mackaysmarketing.au.auth0.com/.well-known/jwks.json` · RS256.
+- Claim namespace: `https://mackaysmarketing.com.au` — claims: `…/consignor_ids` (string
+  array), `…/staff` (boolean true), `…/hub_role` (this doc). The hub's RLS already honors this
+  issuer+namespace (migration 0057, proven).
+- **Staff-hub application: recreate on the NEW tenant** (the 2026-07-19 app on the old tenant
+  is void — old-tenant apps die with the cutover). Regular Web App, dev callbacks
+  `http://localhost:3000/api/auth/callback` + `:3001`, logout `http://localhost:3000` +
+  `:3001`; add Vercel domains at deploy; trim grant_types to `authorization_code` +
+  `refresh_token`. Record the new client_id HERE when created (cutover runbook step 2);
+  client_secret stays in the Auth0 dashboard → each app's env, never committed. One application
+  serves both apps; split later only if session policies diverge.
 
 ## First commit (do this before any code)
 Update this repo's own docs — `crm/CLAUDE.md` (§Auth), `returns-estimator-module/docs/ARCHITECTURE.md`
@@ -60,22 +56,13 @@ Update this repo's own docs — `crm/CLAUDE.md` (§Auth), `returns-estimator-mod
 ## The `hub_role` claim (coordinate with grower-portal — they own the Action)
 Role source is Auth0 `app_metadata.hub_role` ∈
 `hub_admin | admin | staff | grower_admin | grower` (per-user, tenant-admin/onboarding-set;
-users cannot write their own app_metadata). The post-login Action (grower-portal tenant,
-`grower-portal-consignor-ids`) gains an ADDITIVE block — same pattern as the staff claim:
-
-```js
-+ const hubRole = event.user.app_metadata?.hub_role;
-+ const HUB_ROLES = ["hub_admin", "admin", "staff", "grower_admin", "grower"];
-+ if (typeof hubRole === "string" && HUB_ROLES.includes(hubRole)) {
-+   api.idToken.setCustomClaim(`${NAMESPACE}/hub_role`, hubRole);
-+   api.accessToken.setCustomClaim(`${NAMESPACE}/hub_role`, hubRole);
-+ }
-```
-
-Absence = no claim = no hub access. `role` stays hardcoded `authenticated`. The portal's
-pending v3 (staff claim) and this v4 block are independent additive changes — land in either
-order, but tell the grower-portal repo before deploying (deployed Action version is theirs to
-manage). Parse strictly app-side: exact enum match, anything else → unauthenticated.
+users cannot write their own app_metadata), surfaced as the namespaced claim
+`https://mackaysmarketing.com.au/hub_role`. The NEW tenant's post-login Action mints it from
+day one — the consolidated reference implementation (consignor_ids + staff + hub_role + the
+staff-MFA rule, `role` hardcoded `authenticated`) lives in
+`mm-data-hub/docs/auth0-tenant-cutover.md` step 2. The grower-portal repo owns the deployed
+Action going forward — coordinate any change. Parse strictly app-side: exact enum match,
+anything else → unauthenticated.
 
 ## Explicitly OUT of this kickoff
 - **The CRM MCP server app** (`crm/apps/mcp`) — unauthenticated by design (MVP). Putting it

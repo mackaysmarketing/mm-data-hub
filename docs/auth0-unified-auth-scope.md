@@ -155,6 +155,13 @@ When triggered:
 
 Phase B kickoff handover for the mm-hub repo: `docs/mm-hub-auth0-login-kickoff.md`.
 
+**Update 2026-07-20 — tenant decision superseded:** Tim chose a NEW properly-named tenant over
+keeping the `grower-portal` name. Tenant **`mackaysmarketing`** (AU) is created; the claim
+namespace moves to `https://mackaysmarketing.com.au` in the same cutover. Hub dual-tenant
+support is LIVE and proven (migration `0057`, auth0:rls 188/188). Runbook with remaining steps:
+`docs/auth0-tenant-cutover.md`. Phase A's old-tenant application is void; its replacement is
+created on the new tenant in runbook step 2.
+
 ## Suggested sequence and sizing
 | Phase | Owner | Size | Blocks on |
 |---|---|---|---|

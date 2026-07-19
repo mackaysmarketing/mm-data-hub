@@ -34,6 +34,15 @@
 //   S5  grower_directory: staff == owner-derived grower list (non-test, is_grower); grower,
 //       mm-hub-internal (deliberate), and no-claim tokens all → 0 rows.
 //
+// Tenant-migration sections (0057 — the mackaysmarketing tenant beside grower-portal, each
+// issuer honored ONLY under its OWN claim namespace):
+//   T1  new-issuer identity + staff helper semantics; CROSS-NAMESPACE forgeries are inert
+//       (old-namespace claims under the new issuer and vice versa → empty/false).
+//   T2  deny guards refuse app_metadata under the NEW issuer too (the 0050 FUTURE-ISSUER
+//       invariant compliance); hostile hybrid sees only its namespaced scope.
+//   T3  data parity under the new issuer: grower [A] == owner counts; staff == all rows on the
+//       7 relations, the grower views, and the directory; forged/foreign shapes → 0.
+//
 // Expected counts are DERIVED IN-RUN as the table owner (proof-style contract: hardcoded
 // baselines are FORBIDDEN); fixture consignors are resolved by live row counts, not uuids.
 // Run with loaders QUIESCENT: expected counts derive in B0 and are re-asserted in later
@@ -49,6 +58,10 @@ import { isMain } from '../src/lib/util.ts';
 const AUTH0_ISS = 'https://grower-portal.au.auth0.com/';
 const CLAIM = 'https://grower-portal.mackays.com.au/consignor_ids';
 const STAFF = 'https://grower-portal.mackays.com.au/staff';
+// 0057 tenant migration — the new tenant + its OWN claim namespace (cutover: both live).
+const NEW_ISS = 'https://mackaysmarketing.au.auth0.com/';
+const CLAIM2 = 'https://mackaysmarketing.com.au/consignor_ids';
+const STAFF2 = 'https://mackaysmarketing.com.au/staff';
 const SUPA_ISS = 'https://uqzfkhsdyeokwnkpcxui.supabase.co/auth/v1';
 
 const TABLES = [
@@ -93,6 +106,10 @@ const auth0Tok = (ids: string[], extra: object = {}) =>
 const hubTok = (o: object) => JSON.stringify({ role: 'authenticated', ...o }); // no iss — the Cube/MCP/proof shape
 const staffTok = (extra: object = {}) =>
   JSON.stringify({ iss: AUTH0_ISS, role: 'authenticated', [STAFF]: true, ...extra });
+const auth0Tok2 = (ids: string[], extra: object = {}) =>
+  JSON.stringify({ iss: NEW_ISS, role: 'authenticated', [CLAIM2]: ids, ...extra });
+const staffTok2 = (extra: object = {}) =>
+  JSON.stringify({ iss: NEW_ISS, role: 'authenticated', [STAFF2]: true, ...extra });
 
 async function underCtx<T>(c: PoolClient, claimsJson: string | null, fn: () => Promise<T>): Promise<T> {
   await c.query('begin');
@@ -438,6 +455,73 @@ async function main(): Promise<void> {
     const dirForged = await count(
       c, JSON.stringify({ iss: SUPA_ISS, role: 'authenticated', [STAFF]: true }), 'semantic.grower_directory');
     check('Supabase-iss token carrying the staff claim → 0 directory rows', dirForged === 0, `got ${dirForged}`);
+
+    // ── T1: new tenant (0057) — helper semantics + cross-namespace forgeries inert ───────────
+    log('\n=== T1  mackaysmarketing tenant: helpers honor ONLY the own-namespace claims ===');
+    check('new-iss [A,B] → {A,B}', sameSet(await ids(auth0Tok2([A, B])), [A, B]));
+    check('new-iss duplicates de-duplicated', sameSet(await ids(auth0Tok2([A, A, B])), [A, B]));
+    check('new-iss malformed element skipped → {B}', sameSet(await ids(auth0Tok2(['not-a-uuid', B])), [B]));
+    check('new-iss claim not an array → empty',
+      sameSet(await ids(JSON.stringify({ iss: NEW_ISS, role: 'authenticated', [CLAIM2]: A })), []));
+    check('new-iss issuer without trailing slash → empty',
+      sameSet(await ids(JSON.stringify({ iss: 'https://mackaysmarketing.au.auth0.com', role: 'authenticated', [CLAIM2]: [A] })), []));
+    check('CROSS: old-namespace claim under NEW issuer → empty',
+      sameSet(await ids(JSON.stringify({ iss: NEW_ISS, role: 'authenticated', [CLAIM]: [A] })), []));
+    check('CROSS: new-namespace claim under OLD issuer → empty',
+      sameSet(await ids(JSON.stringify({ iss: AUTH0_ISS, role: 'authenticated', [CLAIM2]: [A] })), []));
+    check('new-namespace claim under WRONG issuer → empty',
+      sameSet(await ids(JSON.stringify({ iss: 'https://evil.example.com/', role: 'authenticated', [CLAIM2]: [A] })), []));
+    check('new-namespace claim under Supabase issuer → empty',
+      sameSet(await ids(JSON.stringify({ iss: SUPA_ISS, role: 'authenticated', [CLAIM2]: [A] })), []));
+    check('new-iss staff=true → true', (await staff(staffTok2())) === true);
+    check('new-iss staff="true" (string) → false',
+      (await staff(JSON.stringify({ iss: NEW_ISS, role: 'authenticated', [STAFF2]: 'true' }))) === false);
+    check('CROSS: old-namespace staff under NEW issuer → false',
+      (await staff(JSON.stringify({ iss: NEW_ISS, role: 'authenticated', [STAFF]: true }))) === false);
+    check('CROSS: new-namespace staff under OLD issuer → false',
+      (await staff(JSON.stringify({ iss: AUTH0_ISS, role: 'authenticated', [STAFF2]: true }))) === false);
+    check('new-namespace staff under Supabase issuer → false',
+      (await staff(JSON.stringify({ iss: SUPA_ISS, role: 'authenticated', [STAFF2]: true }))) === false);
+
+    // ── T2: deny guards cover the NEW issuer (FUTURE-ISSUER invariant compliance) ────────────
+    log('\n=== T2  new-issuer app_metadata is refused (0057 guard extension) ===');
+    const hostile2 = auth0Tok2([A], { app_metadata: { consignor_ids: [B], consignor_id: C, is_internal: true } });
+    check('is_internal_claim() = false on a new-tenant token',
+      (await fnUnder<boolean>(c, hostile2, 'semantic.is_internal_claim()')) === false);
+    check('current_consignor_ids() = {} on a new-tenant token',
+      sameSet(await fnUnder<string[] | null>(c, hostile2, 'semantic.current_consignor_ids()'), []));
+    for (const t of TABLES) {
+      const bd = await breakdown(c, hostile2, t, A, B, C);
+      const bl = EXPECTED[t]!;
+      check(`${t}: new-iss hostile hybrid sees A only (A=${bd.a} B=${bd.b} C=${bd.cc})`,
+        bd.a === bl.a && bd.b === 0 && bd.cc === 0 && bd.total === bl.a);
+    }
+    const internalOnly2 = await count(c, hostile2, 'core.fact_customer_invoice');
+    check(`internal-only core.fact_customer_invoice = 0 under the new-iss hostile token (owner has ${internalOwner['core.fact_customer_invoice']})`,
+      internalOnly2 === 0, `got ${internalOnly2}`);
+
+    // ── T3: data parity under the new issuer — grower scoped, staff read-all, directory ──────
+    log('\n=== T3  new-issuer parity: grower [A] scoped; staff == all rows; directory staff-only ===');
+    for (const t of TABLES) {
+      const bd = await breakdown(c, auth0Tok2([A]), t, A, B, C);
+      const bl = EXPECTED[t]!;
+      check(`${t}: new-iss [A] A=${bd.a} B=${bd.b} C=${bd.cc} total=${bd.total}`,
+        bd.a === bl.a && bd.b === 0 && bd.cc === 0 && bd.total === bl.a, `(expect A=${bl.a} B=0 C=0 total=${bl.a})`);
+      const sn = await count(c, staffTok2(), t);
+      check(`${t}: new-iss staff=${sn}`, sn === bl.internal, `(expect ${bl.internal})`);
+    }
+    let viewRowSum2 = 0;
+    for (const v of GROWER_VIEWS) {
+      const viaNew = await count(c, auth0Tok2([A, B]), v);
+      const viaHub = await count(c, hubTok({ app_metadata: { consignor_ids: [A, B] } }), v);
+      viewRowSum2 += viaNew;
+      check(`${v}: new-iss=${viaNew} == hub=${viaHub}`, viaNew === viaHub);
+    }
+    check('new-iss view parity is non-trivial (rows > 0)', viewRowSum2 > 0, `sum=${viewRowSum2}`);
+    const dirStaff2 = await count(c, staffTok2(), 'semantic.grower_directory');
+    check(`new-iss staff token sees the full directory (${dirStaff2})`, dirStaff2 === dirOwner, `(expect ${dirOwner})`);
+    const dirGrower2 = await count(c, auth0Tok2([A]), 'semantic.grower_directory');
+    check('new-iss grower [A] token → 0 directory rows', dirGrower2 === 0, `got ${dirGrower2}`);
 
     const failed = results.filter((r) => !r.pass);
     log(`\n=== ${results.length - failed.length}/${results.length} checks passed ===`);
