@@ -107,6 +107,14 @@ audit conclusions carry over unchanged — `auth.uid()`-keyed tables error close
 `using(true)` reference tables stay readable).
 
 ### 3. Portal repo: switch + users (grower-portal session)
+STATUS 2026-07-20 (grower-portal session): code + config side DONE — commit 6f2a5c2 pushed
+(auto-deploys). Done: claim namespace flipped in `lib/auth0.ts`; smoke route pins new
+issuer + audience; dev .env.local switched (client secret = placeholder for Tim); the new
+tenant app's callbacks were registered as `/api/auth/callback` but the portal's
+nextjs-auth0 v4 mounts `/auth/callback` — FIXED via connector (callbacks now
+`/auth/callback` on localhost + prod, web origins added). REMAINING (Tim, manual):
+Vercel prod env swap (domain/client_id/audience + new client secret), user recreation
+with app_metadata below, then the smoke checks.
 - Env: new domain/issuer, client_id/secret, audience; claim-namespace constant
   `https://grower-portal.mackays.com.au` → `https://mackaysmarketing.com.au` wherever the app
   reads its own claims (`lib/auth0.ts`, per their CLAUDE.md). Redeploy.
