@@ -1,3 +1,26 @@
+# Handoff (2026-07-20): grower directory v2 — parent hierarchy (0058)
+
+Status: **✅ built, applied to prod, all proofs green.** Push manual.
+Input: grower-portal Sprint 19 ask (revised same-day: hierarchy from FreshTrack parents, NOT a
+curated table — Tim's call after the first staff login rendered ~40 ungrouped consignor pills).
+Cross-repo response: `docs/grower-directory-v2-response.md`.
+
+## What landed
+- **`0058_grower_directory_hierarchy`:** `core.dim_grower` + `parent_entity_id`/`parent_name`
+  (denormalized in `refresh_dim_grower()` from the ALREADY-LANDED `raw.ft_entity.parent_id` —
+  no loader change; build-time because raw.ft_entity is ungranted (org_tax_no) and the
+  directory is an invoker view). `semantic.grower_directory` v2 exposes `entity_id` +
+  the two parent columns — same rows, same staff-only gate. NO policy/RLS change.
+- **Portal binding verified live:** MACKF "Mac Farms" parents exactly its 5 farms;
+  LRCLA/LRCTU share parent "L & R Collins" (LRCOL), which itself parents to "Mackays Growers"
+  (the umbrella their dissolution rule handles); GJFSD parent = null (as their doc predicted).
+  Parent coverage 39/100 (surfaced; grows as FreshTrack parents are curated).
+- **Proof: `portal:verify` F8** (drift guard dim↔raw, staff full-read parity, pair-shares-
+  parent, MACKF member parity, grower→0) — **29/29** · `auth0:rls` 188/188 · `rls:posture`
+  104/104 · tests 139/139.
+- ⚠ Numbering: the tenant-cutover CLEANUP migration formerly promised as "0058" is now **0059**
+  (docs updated).
+
 # Handoff (2026-07-18): staff claim + grower directory (0056) — portal admin phase unblocked
 
 Status: **✅ built, applied to prod via MCP apply_migration, all proofs green.** Push manual.

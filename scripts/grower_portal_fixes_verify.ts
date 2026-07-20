@@ -22,6 +22,11 @@
 //   F7  schedule 1329 (Tim's fixture): via the LRCTU grower token, each of its
 //       loads shows retailer_group (grower_load_sale) + per-category deductions
 //       (grower_gp_settlement_load).
+//   F8  directory hierarchy (Sprint 19 / 0058): dim parent columns match a live
+//       recomputation from raw.ft_entity (drift=0); staff token sees the full
+//       directory with the three v2 columns; the test pair shares ONE non-null
+//       parent; the MACKF ("Mac Farms") member count matches the raw-derived
+//       expectation; grower token still gets 0 directory rows.
 //
 // Proof-style contract: NO hardcoded count baselines — every expectation is
 // derived in-run from source SQL (the portal's "238 loads" is REPORTED, not
@@ -248,6 +253,62 @@ async function main(): Promise<void> {
         from semantic.grower_load_sale`, [pairIds]));
     check('grower_load_sale: pair token sees only its rows', lsPair.rows === lsPair.own && Number(lsPair.rows) > 0,
       `rows=${lsPair.rows}`);
+
+    // ── F8: directory hierarchy (Sprint 19 / 0058) ───────────────────────────────
+    log('\n=== F8  grower_directory v2: parent hierarchy columns ===');
+    // Auth0 staff token (mackaysmarketing tenant, 0057) — the directory is staff-gated.
+    const staffTok = JSON.stringify({
+      iss: 'https://mackaysmarketing.au.auth0.com/', role: 'authenticated',
+      'https://mackaysmarketing.com.au/staff': true,
+    });
+    // Drift guard: dim parent columns == live recomputation from raw.ft_entity (as owner).
+    const f8drift = await q1<{ mism: string }>(c, `
+      select count(*) mism
+      from core.dim_grower g
+      join raw.ft_entity e on e.id = g.entity_id
+      left join raw.ft_entity p on p.id = e.parent_id
+      where g.parent_entity_id is distinct from e.parent_id
+         or g.parent_name is distinct from p.org_name`);
+    check(`dim parent columns match raw.ft_entity recomputation (drift=${f8drift.mism})`, Number(f8drift.mism) === 0);
+    // Staff sees the full directory incl. the v2 columns; coverage reported, not asserted.
+    const f8own = await q1<{ n: string }>(c, `
+      select count(*) n from core.dim_grower
+      where is_grower is true and coalesce(is_test, false) = false`);
+    const f8staff = await underCtx(c, staffTok, () =>
+      q1<{ rows: string; with_parent: string; with_entity: string }>(c, `
+        select count(*) rows,
+               count(*) filter (where parent_entity_id is not null and parent_name is not null) with_parent,
+               count(*) filter (where entity_id is not null) with_entity
+        from semantic.grower_directory`));
+    check(`staff token: directory rows (${f8staff.rows}) == owner-derived (${f8own.n}); entity_id total`,
+      f8staff.rows === f8own.n && f8staff.with_entity === f8staff.rows,
+      `parent coverage ${f8staff.with_parent}/${f8staff.rows} (report, not asserted)`);
+    // The test pair shares ONE non-null parent (name reported — the portal expects one group).
+    const f8pair = await underCtx(c, staffTok, () =>
+      (async () => (await c.query<{ farm_code: string; parent_entity_id: string | null; parent_name: string | null }>(`
+        select farm_code, parent_entity_id, parent_name from semantic.grower_directory
+        where farm_code = any($1) order by farm_code`, [PAIR_CODES])).rows)());
+    check(`test pair shares one non-null parent (${f8pair[0]?.parent_name ?? 'NULL'})`,
+      f8pair.length === 2 && f8pair[0]!.parent_entity_id !== null
+        && f8pair[0]!.parent_entity_id === f8pair[1]!.parent_entity_id
+        && f8pair[0]!.parent_name === f8pair[1]!.parent_name);
+    // "Mac Farms" membership: directory rows parenting to MACKF's entity == raw-derived count.
+    const f8mac = await q1<{ expected: string; entity_id: string | null }>(c, `
+      with mac as (select entity_id from core.dim_grower where code = 'MACKF')
+      select (select entity_id from mac)::text entity_id,
+             count(*)::text expected
+      from core.dim_grower g
+      where g.parent_entity_id = (select entity_id from mac)
+        and g.is_grower is true and coalesce(g.is_test, false) = false`);
+    const f8macDir = await underCtx(c, staffTok, () =>
+      q1<{ n: string }>(c, `select count(*) n from semantic.grower_directory where parent_entity_id = $1`,
+        [f8mac.entity_id]));
+    check(`MACKF ("Mac Farms") members via staff token (${f8macDir.n}) == raw-derived (${f8mac.expected})`,
+      f8mac.entity_id !== null && f8macDir.n === f8mac.expected && Number(f8mac.expected) > 0);
+    // Growers still get zero directory rows (v2 must not widen the gate).
+    const f8grower = await underCtx(c, pairTok, () =>
+      q1<{ n: string }>(c, `select count(*) n from semantic.grower_directory`));
+    check('grower (pair) token → 0 directory rows', Number(f8grower.n) === 0, `got ${f8grower.n}`);
 
     const failed = results.filter((r) => !r.pass);
     log(`\n=== ${results.length - failed.length}/${results.length} checks passed ===`);

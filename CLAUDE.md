@@ -56,7 +56,8 @@ repos — coordinate first; full contract: `docs/mm-hub-auth0-integration.md`.
   All four claim helpers resolve namespace BY ISSUER and honor each issuer's claims ONLY under
   its own namespace; the app_metadata deny guards refuse BOTH Auth0 issuers (the FUTURE-ISSUER
   invariant compliance case). Runbook + remaining steps: `docs/auth0-tenant-cutover.md`. After
-  cutover, 0058 drops the old issuer/namespace and this section is rewritten single-tenant.
+  cutover, 0059 drops the old issuer/namespace and this section is rewritten single-tenant
+  (0058 was taken by the directory-hierarchy ask).
 - **`semantic.auth0_consignor_ids()`** honors that claim ONLY when `iss` equals the Auth0 issuer
   EXACTLY (incl. trailing slash); any other/missing issuer → empty set. Array-only, per-element
   uuid-validated, de-duplicated, fail-closed — the 0026 parsing rigor.
@@ -73,7 +74,10 @@ repos — coordinate first; full contract: `docs/mm-hub-auth0-integration.md`.
   issuer-pinned, STRICT boolean-true, fail-closed — quals the additive `auth0_staff_read_*`
   policies (third permissive set, the 7 grower relations) + gates staff-only
   `semantic.grower_directory` (explicit WHERE gate, 0035 pattern — grower/mm-hub/Cube/MCP
-  contexts get 0 rows). **Staff ≠ internal:** the claim NEVER opens internal-only surfaces
+  contexts get 0 rows). Directory v2 (0058): + `entity_id`/`parent_entity_id`/`parent_name` —
+  the FreshTrack parent hierarchy (raw.ft_entity.parent_id, denormalized onto dim_grower at
+  refresh because raw is ungranted); the portal groups by immediate parent. Proof: portal:verify
+  F8. **Staff ≠ internal:** the claim NEVER opens internal-only surfaces
   (customer book, AR, scan, insight). Accepted residual: an Auth0 tenant admin flipping
   `mm_staff` = read of the whole grower surface — keep the tenant admin set small + MFA'd.
   Moving the internal staff hub (mm-hub) itself onto Auth0 is the stated direction but a
