@@ -148,6 +148,34 @@ Delivered against grower-portal's handover doc (FIX 1–7). Proof: **`npm run po
 - **`semantic.grower_load_sale` (0055):** load × customer for growers — retailer_group + gross +
   share_of_load_gross; join `grower_gp_settlement_load` on `dispatch_load_id` for the FIX 7
   drill-down (deduction_* columns were already there).
+- **⚠ ARCHIVED PALLETS ARE A LOAD-LEVEL FLAG (0061, 2026-07-21):** `raw.ft_pallet.is_archived` is
+  all-or-nothing per load — of 19,205 shipped Sell loads, 14,577 are wholly live, **4,628 wholly
+  archived, and only 3 mixed**. So `where not is_archived` in a pallet rollup does not drop
+  pallets, it **deletes whole loads** — which is what hid 4,628 loads carrying **$58.7M of customer
+  invoices and $8.95M of settlement** from `grower_dispatch_load` (the portal's "Not linked to a
+  load" bucket). Archived loads are reconsignment **destinations** (4.2% origins vs 26.1% for live
+  loads), so their boxes are terminal and safe to count. `grower_dispatch_load` now keeps the
+  exclusion for MEASURES, falls back to the load's own pallets when none are live, and exposes
+  **`is_archived`**. NEVER use `pallet_no` as pallet identity — it is reused across loads (48,338
+  collide among live pallets alone).
+- **Settlement origin lineage (0061):** `core.fact_gp_settlement_load` /
+  `semantic.grower_gp_settlement_load` carry **`origin_dispatch_load_id` / `origin_load_no` /
+  `origin_load_count`** — the load the GROWER dispatched (`coalesce(original_dispatch_load_id,
+  dispatch_load_id)` PER DETAIL ROW), denormalised at build time (the 0020/0054 pattern). The
+  sale-load `load_no` means nothing to a grower — 10,147 lines carry an origin ≠ the sale load.
+  **1,158 of 19,005 groups draw from >1 origin → `origin_*` are NULL, `origin_load_count` says so;
+  never pick a winner** (`original_dispatch_load_id` is a legacy `max()` — prefer `origin_*`).
+  Exact per-origin money needs a sibling fact at origin grain — `raw.ft_charge_applied` carries
+  `original_dispatch_load_id` too, so deductions split exactly with no apportioning.
+- **The residual 1,043 settlement lines ($4.04M) are `order_type='B'` (Buy) loads** — present,
+  shipped, with pallets, but outside the Sell-only governed gate. Exposing them is a business
+  decision that would redefine an existing metric; do not relax the gate silently.
+- **NetSuite RCTI ↔ GP schedule key (evidence 2026-07-21, crosswalk NOT built):**
+  `ns_vendor_bill.tranid` is structured **`yyww-CODE[-CROP][-N]`** where `ww` = `ft_gp_schedule.week_no`.
+  **(grower_code, date) is NOT 1:1** — 152 crop-split bills, 78 side bills. At (code, year, week):
+  781 of 912 cells tie to the cent, 131 differ ($12.1M). Produce-grain money is ALREADY landed and
+  reconciles to the cent from `raw.ns_vendor_bill_line`; only `quantity`/`rate`/`item.parent` are
+  missing from the loader. `PA` = Payable, NOT unpaid (all 33 have a paid date; 7 PD have none).
 - **`public` REST audit (FIX 3, 2026-07-17):** anon = zero policies (fail-closed; grants dead).
   Auth0/grower tokens: identity-scoped mm-hub policies fail closed (`auth.uid()` cast errors on an
   Auth0 sub); residual = five `using(true)` authenticated-read reference tables (retailers=3 rows,

@@ -143,20 +143,59 @@ async function main(): Promise<void> {
 
     // ── F4: load-grain view ──────────────────────────────────────────────────────
     log('\n=== F4  grower_dispatch_load (load grain) ===');
-    const f4 = await q1<{ view_rows: string; pallet_loads: string }>(c, `
+    // 0061: a load whose pallets are ALL archived is no longer deleted by the pallet filter.
+    // The view is now one row per shipped (grower, load) — archived or not — with measures taken
+    // from live pallets, falling back to the load's own pallets when none are live.
+    const f4 = await q1<{ view_rows: string; pallet_loads: string; v_arch: string; p_arch: string }>(c, `
       select
         (select count(*) from semantic.grower_dispatch_load) view_rows,
-        (select count(distinct (grower_key, load_id)) from semantic.grower_dispatch_shipped where not is_archived) pallet_loads`);
-    check(`view rows (${f4.view_rows}) == distinct non-archived (grower, load) pallet groups (${f4.pallet_loads})`,
+        (select count(distinct (grower_key, load_id)) from semantic.grower_dispatch_shipped) pallet_loads,
+        (select count(*) from semantic.grower_dispatch_load where is_archived) v_arch,
+        (select count(*) from (
+           select grower_key, load_id from semantic.grower_dispatch_shipped
+           group by grower_key, load_id having count(*) filter (where not is_archived) = 0) z) p_arch`);
+    check(`view rows (${f4.view_rows}) == distinct shipped (grower, load) pallet groups (${f4.pallet_loads})`,
       f4.view_rows === f4.pallet_loads);
-    const f4sum = await q1<{ v_boxes: string; p_boxes: string; v_wt: string; p_wt: string }>(c, `
+    check(`is_archived (${f4.v_arch}) == loads with zero live pallets (${f4.p_arch})`,
+      f4.v_arch === f4.p_arch);
+    // Measures tie per branch: live loads to the live-pallet grain, archived loads to their own.
+    const f4sum = await q1<{ v_boxes: string; p_boxes: string; v_wt: string; p_wt: string;
+                            va_boxes: string; pa_boxes: string }>(c, `
+      with live as (
+        select grower_key, load_id from semantic.grower_dispatch_shipped
+        group by grower_key, load_id having count(*) filter (where not is_archived) > 0)
       select
-        (select coalesce(sum(boxes),0)::text from semantic.grower_dispatch_load) v_boxes,
-        (select coalesce(sum(boxes),0)::text from semantic.grower_dispatch_shipped where not is_archived) p_boxes,
-        (select coalesce(sum(net_weight_kg),0)::text from semantic.grower_dispatch_load) v_wt,
-        (select coalesce(sum(net_weight),0)::text from semantic.grower_dispatch_shipped where not is_archived) p_wt`);
-    check(`Σboxes ties exactly (${f4sum.v_boxes})`, f4sum.v_boxes === f4sum.p_boxes, `pallet grain ${f4sum.p_boxes}`);
-    check(`Σnet_weight ties exactly (${f4sum.v_wt})`, f4sum.v_wt === f4sum.p_wt, `pallet grain ${f4sum.p_wt}`);
+        (select coalesce(sum(boxes),0)::text from semantic.grower_dispatch_load where not is_archived) v_boxes,
+        (select coalesce(sum(s.boxes),0)::text from semantic.grower_dispatch_shipped s
+           join live l on l.grower_key=s.grower_key and l.load_id=s.load_id where not s.is_archived) p_boxes,
+        (select coalesce(sum(net_weight_kg),0)::text from semantic.grower_dispatch_load where not is_archived) v_wt,
+        (select coalesce(sum(s.net_weight),0)::text from semantic.grower_dispatch_shipped s
+           join live l on l.grower_key=s.grower_key and l.load_id=s.load_id where not s.is_archived) p_wt,
+        (select coalesce(sum(boxes),0)::text from semantic.grower_dispatch_load where is_archived) va_boxes,
+        (select coalesce(sum(s.boxes),0)::text from semantic.grower_dispatch_shipped s
+           where (s.grower_key, s.load_id) not in (select grower_key, load_id from live)) pa_boxes`);
+    check(`Σboxes on live loads ties exactly (${f4sum.v_boxes})`, f4sum.v_boxes === f4sum.p_boxes, `pallet grain ${f4sum.p_boxes}`);
+    check(`Σnet_weight on live loads ties exactly (${f4sum.v_wt})`, f4sum.v_wt === f4sum.p_wt, `pallet grain ${f4sum.p_wt}`);
+    check(`Σboxes on archived loads ties to their own pallets (${f4sum.va_boxes})`,
+      f4sum.va_boxes === f4sum.pa_boxes, `pallet grain ${f4sum.pa_boxes}`);
+    // REGRESSION: every load the pre-0061 definition returned must survive, measures unchanged.
+    const f4reg = await q1<{ lost: string; changed: string; added: string }>(c, `
+      with old_pal as (
+        select grower_key, load_id, max(dispatched_on) dispatched_on, max(pack_week) pack_week,
+               count(*) pallet_count, sum(boxes) boxes, sum(net_weight) net_weight_kg,
+               array_agg(distinct product) filter (where product is not null) products
+        from semantic.grower_dispatch_shipped where not is_archived
+        group by grower_key, load_id)
+      select
+        (select count(*)::text from old_pal o
+           left join semantic.grower_dispatch_load n on n.load_id=o.load_id where n.load_id is null) lost,
+        (select count(*)::text from old_pal o join semantic.grower_dispatch_load n on n.load_id=o.load_id
+          where o.pallet_count is distinct from n.pallet_count or o.boxes is distinct from n.boxes
+             or o.net_weight_kg is distinct from n.net_weight_kg or o.products is distinct from n.products
+             or o.dispatched_on is distinct from n.dispatched_on or o.pack_week is distinct from n.pack_week) changed,
+        (select count(*)::text from semantic.grower_dispatch_load where is_archived) added`);
+    check(`pre-0061 loads all survive (lost=${f4reg.lost}) and are byte-identical (changed=${f4reg.changed}); ${f4reg.added} archived loads recovered`,
+      f4reg.lost === '0' && f4reg.changed === '0' && Number(f4reg.added) > 0);
     const f4pair = await underCtx(c, pairTok, () =>
       q1<{ rows: string; own: string }>(c, `
         select count(*) rows, count(*) filter (where grower_key = any($1::uuid[])) own
@@ -364,6 +403,60 @@ async function main(): Promise<void> {
     })();
     check('staff (non-admin) token cannot toggle activation — RPC refuses 42501',
       f9staffWrite === '42501', `got ${f9staffWrite}`);
+
+    // ── F10: origin lineage on the settlement-load view (0061) ───────────────────
+    // The portal's "Not linked to a load" bucket. Every settlement line must land in exactly one
+    // named bucket, with nothing unexplained — origin resolved and visible, pooled because the
+    // grain genuinely carries several origins, or a Buy load the Sell-only surface excludes.
+    log('\n=== F10  settlement origin lineage (0061) ===');
+    const f10 = await q1<{
+      lines: string; unambiguous: string; pooled: string; no_load_no: string;
+      visible: string; buy: string; unexplained: string; recovered: string;
+    }>(c, `
+      with sl as (
+        select s.*, dl.load_id as visible_load, dl.is_archived,
+               d.order_type, st.sequence as seq
+        from core.fact_gp_settlement_load s
+        left join semantic.grower_dispatch_load dl on dl.load_id = s.origin_dispatch_load_id
+        left join raw.ft_dispatch_load d on d.id = s.origin_dispatch_load_id
+        left join core.dim_dispatch_state st on st.state_id = d.state_id)
+      select count(*)::text lines,
+             count(*) filter (where origin_load_count = 1)::text unambiguous,
+             count(*) filter (where origin_load_count > 1)::text pooled,
+             count(*) filter (where origin_dispatch_load_id is not null and origin_load_no is null)::text no_load_no,
+             count(*) filter (where visible_load is not null)::text visible,
+             count(*) filter (where origin_load_count = 1 and visible_load is null and order_type = 'B')::text buy,
+             count(*) filter (where origin_load_count = 1 and visible_load is null and order_type is distinct from 'B')::text unexplained,
+             count(*) filter (where is_archived)::text recovered
+      from sl`);
+    check(`origin resolved for every unambiguous line — origin_load_no never missing (${f10.no_load_no})`,
+      f10.no_load_no === '0');
+    check(`every line lands in a named bucket: ${f10.visible} visible + ${f10.pooled} pooled (>1 origin) + ${f10.buy} Buy-order + ${f10.unexplained} unexplained == ${f10.lines}`,
+      Number(f10.visible) + Number(f10.pooled) + Number(f10.buy) + Number(f10.unexplained) === Number(f10.lines)
+      && f10.unexplained === '0');
+    check(`the 0061 archived fix recovers origin loads the old view hid (${f10.recovered})`,
+      Number(f10.recovered) > 0);
+    // origin_load_no must be the ORIGIN's number, never the sale load's, and must re-derive from raw.
+    const f10drift = await q1<{ drift: string; differs: string }>(c, `
+      select
+        (select count(*)::text from core.fact_gp_settlement_load s
+           join raw.ft_dispatch_load d on d.id = s.origin_dispatch_load_id
+          where s.origin_load_no is distinct from d.load_no) drift,
+        (select count(*)::text from core.fact_gp_settlement_load
+          where origin_dispatch_load_id is not null
+            and origin_dispatch_load_id <> dispatch_load_id) differs`);
+    check(`origin_load_no re-derives from raw.ft_dispatch_load (drift=${f10drift.drift}); ${f10drift.differs} lines carry an origin ≠ the sale load`,
+      f10drift.drift === '0' && Number(f10drift.differs) > 0);
+    // Grower-visible: the origin columns must survive the RLS chain, and fail closed without a claim.
+    const f10pair = await underCtx(c, pairTok, () =>
+      q1<{ rows: string; with_origin: string }>(c, `
+        select count(*)::text rows, count(origin_load_no)::text with_origin
+        from semantic.grower_gp_settlement_load`));
+    check(`test pair via grower token sees origin_load_no on its settlement lines (${f10pair.with_origin} of ${f10pair.rows})`,
+      Number(f10pair.rows) > 0 && Number(f10pair.with_origin) > 0);
+    const f10none = await underCtx(c, null, () =>
+      q1<{ n: string }>(c, `select count(*)::text n from semantic.grower_gp_settlement_load`));
+    check('grower_gp_settlement_load: no-claim token → 0 rows (fail closed)', f10none.n === '0', `got ${f10none.n}`);
 
     const failed = results.filter((r) => !r.pass);
     log(`\n=== ${results.length - failed.length}/${results.length} checks passed ===`);

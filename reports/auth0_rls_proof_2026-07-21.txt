@@ -108,12 +108,12 @@
 === B8  grower views: Auth0 [A,B] == mm-hub app_metadata [A,B] (identical counts) ===
   PASS  semantic.grower_dispatch_detail: auth0=4290 hub=4290
   PASS  semantic.grower_dispatch_shipped: auth0=31315 hub=31315
-  PASS  semantic.grower_dispatch_load: auth0=2933 hub=2933
+  PASS  semantic.grower_dispatch_load: auth0=3274 hub=3274
   PASS  semantic.grower_load_sale: auth0=1835 hub=1835
   PASS  semantic.grower_settlement: auth0=189 hub=189
   PASS  semantic.grower_gp_settlement: auth0=105 hub=105
   PASS  semantic.grower_gp_settlement_load: auth0=6733 hub=6733
-  PASS  view parity is non-trivial (rows > 0 across the grower views) — sum=47400
+  PASS  view parity is non-trivial (rows > 0 across the grower views) — sum=47741
 
 === S1  semantic.auth0_is_staff() — strict boolean-true, issuer-pinned (0056) ===
   PASS  staff=true on the Auth0 issuer → true
@@ -152,7 +152,7 @@
   PASS  core.fact_load_sale: staff=12940 — (expect 12940)
   PASS  semantic.grower_dispatch_detail: staff=48073 == mm-hub internal=48073
   PASS  semantic.grower_dispatch_shipped: staff=179822 == mm-hub internal=179822
-  PASS  semantic.grower_dispatch_load: staff=14577 == mm-hub internal=14577
+  PASS  semantic.grower_dispatch_load: staff=19205 == mm-hub internal=19205
   PASS  semantic.grower_load_sale: staff=12917 == mm-hub internal=12917
   PASS  semantic.grower_settlement: staff=1167 == mm-hub internal=1167
   PASS  semantic.grower_gp_settlement: staff=1332 == mm-hub internal=1332
@@ -265,12 +265,12 @@
   PASS  core.fact_load_sale: new-iss staff=12940 — (expect 12940)
   PASS  semantic.grower_dispatch_detail: new-iss=4290 == hub=4290
   PASS  semantic.grower_dispatch_shipped: new-iss=31315 == hub=31315
-  PASS  semantic.grower_dispatch_load: new-iss=2933 == hub=2933
+  PASS  semantic.grower_dispatch_load: new-iss=3274 == hub=3274
   PASS  semantic.grower_load_sale: new-iss=1835 == hub=1835
   PASS  semantic.grower_settlement: new-iss=189 == hub=189
   PASS  semantic.grower_gp_settlement: new-iss=105 == hub=105
   PASS  semantic.grower_gp_settlement_load: new-iss=6733 == hub=6733
-  PASS  new-iss view parity is non-trivial (rows > 0) — sum=47400
+  PASS  new-iss view parity is non-trivial (rows > 0) — sum=47741
   PASS  new-iss staff token sees the full directory (100) — (expect 100)
   PASS  new-iss grower [A] token → 0 directory rows — got 0
 

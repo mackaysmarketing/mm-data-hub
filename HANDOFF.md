@@ -1,3 +1,105 @@
+# Handoff (2026-07-21b): archived-pallet load fix + settlement origin lineage (0061)
+
+Status: **✅ built, applied to prod, proofs green.** Push manual. Input: grower-portal ask
+"NetSuite grower payments as the settlement source" (2026-07-21) — this landed the piece Tim
+picked (the load-visibility fix); the other three asks are answered but NOT built (below).
+
+## The finding — the loads were never missing; a pallet filter was deleting them
+The portal reported 1,577 settlement lines ($11.5m) resolving to dispatch loads "absent from
+`grower_dispatch_load`" and asked whether they were archived, filtered, or a genuine gap.
+**Filtered.** `semantic.grower_dispatch_load` (0055) rolled pallets up to load grain with
+`where not is_archived` — a filter written to drop pallets REMOVED from a live load. Measured live:
+
+| shipped Sell loads with pallets | 19,205 |
+|---|---|
+| all pallets live (visible) | 14,577 |
+| **ALL pallets archived (load vanishes)** | **4,628** |
+| MIXED — what the filter was actually written for | **3** |
+
+`is_archived` is effectively a LOAD-level flag, so grouping after the filter silently deleted the
+load. Every one of the 19,042 settlement lines' origin loads **does** exist in
+`raw.ft_dispatch_load` — 0 absent. The hidden loads are real, not voided duplicates: they carry
+**$58,698,021 of customer invoices** (3,326 loads, 29% of all invoiced sales gross) and
+**$8,952,319 of grower settlement** (752 loads); all 4,628 load_nos are unique to them; and only
+4.2% are reconsignment ORIGINS (vs 26.1% of live loads) while 2,917 RECEIVED reconsigned boxes —
+they sit at the END of the chain, so counting their boxes cannot double-count.
+(`pallet_no` was deliberately NOT used as evidence — it is reused across loads: 48,338 pallet_nos
+appear on more than one load among LIVE pallets alone.)
+
+## What landed — `0061_grower_archived_loads_and_origin`
+- **`semantic.grower_dispatch_load`:** the archived-pallet exclusion is kept for MEASURES (correct
+  on the 3 mixed loads) but no longer deletes the row. Measures come from live pallets, falling
+  back to the load's own pallets when none are live; **`is_archived`** appended at the tail (a
+  `create or replace view` cannot reorder columns) so the portal can badge or filter — the hub
+  does not decide that. **14,577 → 19,205 rows; 0 lost, 0 changed** (regression-proven).
+- **`core.fact_gp_settlement_load` + `semantic.grower_gp_settlement_load`:** the ask's
+  "expose `origin_load_no` directly". Denormalised at BUILD time (the 0020/0054 pattern — a grower
+  invoker view must not depend on an RLS'd join that can silently drop rows):
+  **`origin_dispatch_load_id` / `origin_load_no` / `origin_load_count`**. Origin =
+  `coalesce(original_dispatch_load_id, dispatch_load_id)` **per detail row**; detail lines win and
+  a deduction line's origin is consulted only for the 37 rows with deductions and no detail (a
+  freight charge spanning the whole sale load must not blur an origin the produce pins down).
+- **⚠ Where the grain genuinely cannot carry one origin:** 1,158 of 19,005 (schedule × sale-load)
+  groups draw from **more than one** origin load. `origin_load_count` states it; `origin_*` are
+  **NULL rather than an arbitrary pick**. (`original_dispatch_load_id` has always been a `max()`
+  over the group — an arbitrary pick — left untouched for compatibility; prefer `origin_*`.)
+
+## The 1,577 bucket, fully partitioned — $0 unexplained
+| bucket | lines | |
+|---|---|---|
+| origin resolved and visible in the view | 16,841 | of which **860 recovered by this fix** |
+| pooled — grain draws from >1 origin ($13.6m) | 1,158 | now flagged, not silently collapsed |
+| **`order_type = 'B'` (Buy) loads** ($4.04m) | 1,043 | shipped, in raw, with pallets — excluded by the Sell-only gate |
+| unexplained | **0** | |
+| | **19,042** | |
+
+**Open question for Tim:** the last 1,043 lines are settled **Buy** loads. `grower_dispatch_shipped`
+is Sell-only (`order_type = 'S'`), a baked-in governed contract mirrored from the Cube dispatch
+metric. Should a grower see Buy loads they were settled for? That is a business call, and relaxing
+the gate would redefine an existing metric (forbidden as a silent change) — so it was NOT touched.
+
+## Evidence (2026-07-21, self-derived, loaders quiescent)
+`portal:verify` **41/42** (new §F10 origin lineage + §F4 rewritten to the new contract with an
+explicit pre-0061 regression guard: lost=0, changed=0) · `rls:posture` **105/105 · 0 anomalies** ·
+`auth0:rls` **232/232** · `ft:gp:reconcile` drift PASS, cash 1225/1277 within 1%, NetSuite Δ −0.43%
+(unchanged — the rebuild did not move money) · typecheck clean · tests **139/139**.
+
+**The one failure is PRE-EXISTING and unrelated to 0061:** `portal:verify` §F9 asserts the enabled
+set equals the 9 seeded pilot consignors, but **32 are now enabled** — an Auth0 admin
+(`auth0|6a5d13b7ae26d3ed16e6adc0`) activated 23 more on 2026-07-21 10:24–10:25 UTC through the 0059
+RPC, i.e. the write path working as designed. The assertion is a frozen membership list — exactly
+the hardcoded baseline CLAUDE.md forbids. It should become a self-deriving invariant (the
+"every enabled row is backed by an activation row" check beside it already passes). **Not changed
+here — Tim's call**, since it is the guard on the activation surface.
+
+## Answered but NOT built (the rest of the ask)
+1. **The NetSuite ↔ FreshTrack key EXISTS.** `ns_vendor_bill.tranid` is structured
+   `yyww-CODE[-CROP][-N]` where `ww` = `ft_gp_schedule.week_no` and CODE = grower code (10/10
+   consecutive weeks on MACSD). **(grower_code, date) is NOT 1:1** — 152 crop-split bills
+   (`2625-SERRA-AVOCADO`), 78 side bills (`MACKF 2627 - MACBO`). Aggregated to (code, year, week):
+   912 cells both sides, **781 tie to the cent**, 131 differ ($12.1m), 59 NS-only, 187 GP-only.
+   Drivers: MACBO (+$7.6m NS-only against −$6.7m differs — an offsetting shape = week/year
+   misalignment), SERRA/SERAV (crop-split bills use a different code than the schedules), AG*
+   sub-entity granularity (known). A real `core.crosswalk_ns_gp_settlement` is buildable and
+   provable; the portal must not infer it from dates.
+2. **Produce-grain money is ALREADY LANDED and already exact** — no new ingestion needed for the
+   headline ask. Bill `2625-MACSD` out of `raw.ns_vendor_bill_line` today: produce 401,943.00 −
+   MD 37,986.12 − FR 9,724.19 − WH 3,512.40 − GST 3,729.85 = **−346,990.44, the bill total to the
+   cent**. 260 product items already classified PRODUCT in `core.dim_ns_charge`; `displayname` is
+   structured (`BananaCavendishPremium XL15kg CartonGreen` — Carton vs Collars/Bands is right
+   there). **Missing:** `quantity`/`rate` on lines and `item.parent` (the loader selects 4 item
+   columns) — a small loader extension. The ask's "hierarchy is incomplete" worry is moot: the hub
+   already classifies by `itemid` prefix, which is the rule the ask recommends.
+3. **`PA` = "Payable"** (FreshTrack DR/PA/PD). It does **not** mean unpaid: all 33 PA schedules
+   have a `gp_payment` paid date, and 7 PD schedules have none. Status lags cash in both
+   directions — the cash is the truth, which is what `consignment_status` already encodes (0055).
+4. **Customer transparency:** the linkage already exists — `core.fact_load_sale` (0054) is
+   load × customer with `retailer_group`, exposed as `semantic.grower_load_sale`. What is withheld
+   is the customer NAME (deliberate) and there is no `channel` field. Tim's 10% rule changes the
+   policy, not the plumbing.
+
+---
+
 # Handoff (2026-07-21): portal activation — first write path + admin tier (0059)
 
 Status: **✅ built, applied to prod, all proofs green, adversarially reviewed (0 surviving
