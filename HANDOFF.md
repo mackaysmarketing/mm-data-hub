@@ -1,3 +1,62 @@
+# Handoff (2026-07-22c): the activation list moves INTO the repo — hub is the source of truth
+
+Status: **✅ built, applied, idempotent, proofs green.** Push manual.
+
+Tim, 2026-07-22: *"I just want to hand select the growers that are able to access the portal and for
+that status to be maintained on the data-hub side rather than via the admin UI on the grower-portal
+side."*
+
+## How it works now
+**`src/config/portal_activation.ts` is THE source of truth.** A hand-curated list of `{ code, note }`
+— note is mandatory. Edit the file, then:
+```
+npm run portal:activate              # DRY RUN — prints the diff, writes NOTHING
+npm run portal:activate -- --apply   # writes core.portal_grower_activation
+```
+Git becomes the audit trail: every change to who can see the portal is a reviewable diff with a
+stated reason, instead of an untracked click in an admin screen.
+
+**Anything not in the list is deactivated on the next `--apply`.** Absence means no portal.
+
+## Safety properties (all deliberate)
+- **Dry run is the default**; writing needs an explicit `--apply`.
+- `assertHubTarget()` before any write.
+- Every code must resolve to **exactly one ACTIVE, non-test, is_grower row**. `dim_grower.code` is
+  NOT unique (WADDA is active + inactive) — ambiguity is a hard stop, never a guess.
+- Refuses to enable a test / inactive / non-grower consignor (checked again after the write).
+- **Post-write read-back happens INSIDE the transaction** — a wrong set rolls back rather than
+  going live.
+- Rows are updated to `enabled=false`, **never deleted** — the audit trail is the point.
+- File-level validation before touching the DB: no duplicate codes, no missing notes.
+- Idempotent: a second run reports `ENABLE 0 / DISABLE 0` and writes nothing.
+- Unit-tested in `tests/portal_activation_list.test.ts` (5 tests, incl. one that asserts the four
+  retained parents are present and labelled, so nobody prunes them for "never being paid").
+
+## Drift detection (the bit that matters for the cross-repo question)
+The applier separates two things that look alike:
+- **DRIFT** — a row whose current state came from outside this file *and disagrees with it*. Listed
+  loudly; `--apply` reverts it. Currently: **0**.
+- **stale provenance** — a row that already agrees but carries an older `updated_by` (e.g. the
+  Auth0 admin sub from the portal UI). Not drift, just history; `--apply` re-stamps it to
+  `mm-data-hub/portal_activation.ts` and deliberately leaves `updated_at` alone, because that
+  column records when the STATE last changed. 21 such rows were re-stamped on the first apply.
+
+## ⚠ OPEN — the grower-portal admin RPC is still live
+`semantic.set_grower_portal_enabled()` (0059, admin-gated) still works, so a portal admin can still
+toggle activation. Nothing diverges silently — the next `portal:activate` run detects it as DRIFT
+and reverts it — but the portal UI is no longer the mechanism Tim wants, and two write paths to one
+table is a race waiting to happen. **Not revoked here: that breaks grower-portal's admin page and
+is a cross-repo change needing coordination.** Options when Tim decides: revoke EXECUTE (hard
+break), make the RPC raise a "managed in mm-data-hub" error (friendly break), or leave it with
+drift-revert as the guard.
+
+## Evidence
+`portal:activate` dry-run + `--apply` + idempotent re-run · `portal:verify` **43/43** ·
+tests **144/144** · typecheck clean. State unchanged by this change (29 enabled, same set as 0063);
+only provenance converged.
+
+---
+
 # Handoff (2026-07-22b): portal activation = the 2026 remittance book (0063)
 
 Status: **✅ applied to prod, all proofs green (portal:verify 43/43 — first fully-green run this
