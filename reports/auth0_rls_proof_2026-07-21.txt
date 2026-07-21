@@ -167,8 +167,8 @@
   PASS  ungranted semantic.retail_prices stays permission-denied under staff
 
 === S5  semantic.grower_directory: staff-only (explicit gate) ===
-  PASS  directory owner-derived expectation is non-trivial — 100 growers
-  PASS  staff token sees the full directory (100) — (expect 100)
+  PASS  directory owner-derived expectation is non-trivial — 99 growers
+  PASS  staff token sees the full directory (99) — (expect 99)
   PASS  grower [A] token → 0 directory rows (no enumeration) — got 0
   PASS  mm-hub internal token → 0 directory rows (gate is staff-claim-only, deliberate) — got 0
   PASS  no-claim token → 0 directory rows — got 0
@@ -271,7 +271,7 @@
   PASS  semantic.grower_gp_settlement: new-iss=105 == hub=105
   PASS  semantic.grower_gp_settlement_load: new-iss=6733 == hub=6733
   PASS  new-iss view parity is non-trivial (rows > 0) — sum=47741
-  PASS  new-iss staff token sees the full directory (100) — (expect 100)
+  PASS  new-iss staff token sees the full directory (99) — (expect 99)
   PASS  new-iss grower [A] token → 0 directory rows — got 0
 
 === 232/232 checks passed ===

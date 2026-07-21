@@ -47,14 +47,14 @@ fixtures: LRCLA=019439a6-fb95-f543-c2e0-40d9f9b719fa LRCTU=019439a8-7d01-187c-89
 
 === F8  grower_directory v2: parent hierarchy columns ===
   PASS  dim parent columns match raw.ft_entity recomputation (drift=0)
-  PASS  staff token: directory rows (100) == owner-derived (100); entity_id total — parent coverage 39/100 (report, not asserted)
+  PASS  staff token: directory rows (99) == owner-derived (99); entity_id total — parent coverage 38/99 (report, not asserted)
   PASS  test pair shares one non-null parent (L & R Collins)
   PASS  MACKF ("Mac Farms") members via staff token (5) == raw-derived (5)
   PASS  grower (pair) token → 0 directory rows — got 0
 
 === F9  grower_directory v3: portal_enabled (admin-curated activation) ===
-  PASS  portal_enabled is never null (0 nulls over 100 rows)
-  FAIL  enabled set == the seeded pilot groups (32 of 100) — got [GJFLE,GJFMF,GJFSD,GJFTF,LAUGO,LMBBF,LMBCO,LMBEP,LMBFA,LRCLA,LRCOL,LRCTU,MACBO,MACGT,MACKF,MACMR,MACRR,MACSD,NOUBC,NOUHO,NOUNE,NOUPA,NOUSB,NOUST,PRIMO,ROCKR,ROLFE,SERAV,SERRA,SLOWE,WADDA,ZONTA] expect [LRCLA,LRCOL,LRCTU,MACBO,MACGT,MACKF,MACMR,MACRR,MACSD]
+  PASS  portal_enabled is never null (0 nulls over 99 rows)
+  FAIL  enabled set == the seeded pilot groups (32 of 99) — got [GJFLE,GJFMF,GJFSD,GJFTF,LAUGO,LMBBF,LMBCO,LMBEP,LMBFA,LRCLA,LRCOL,LRCTU,MACBO,MACGT,MACKF,MACMR,MACRR,MACSD,NOUBC,NOUHO,NOUNE,NOUPA,NOUSB,NOUST,PRIMO,ROCKR,ROLFE,SERAV,SERRA,SLOWE,WADDA,ZONTA] expect [LRCLA,LRCOL,LRCTU,MACBO,MACGT,MACKF,MACMR,MACRR,MACSD]
   PASS  every enabled row is backed by an activation row (default-false holds) — unbacked=0
   PASS  staff (non-admin) token cannot toggle activation — RPC refuses 42501 — got 42501
 
@@ -67,4 +67,4 @@ fixtures: LRCLA=019439a6-fb95-f543-c2e0-40d9f9b719fa LRCTU=019439a8-7d01-187c-89
   PASS  grower_gp_settlement_load: no-claim token → 0 rows (fail closed) — got 0
 
 === 41/42 checks passed ===
-FAILED: enabled set == the seeded pilot groups (32 of 100)
+FAILED: enabled set == the seeded pilot groups (32 of 99)

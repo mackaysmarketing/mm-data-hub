@@ -187,6 +187,8 @@ const REGISTRY: Record<string, RegistryEntry> = {
     why: 'register grower-attribution tags — staff read+WRITE via mm-hub public.gr_block_tags (invoker, auto-updatable); first registered interactive-write surface (0052)' },
   'core.parcel_grower_tag':      { cls: 'internal-only', writes: 'internal',
     why: 'register parcel tags — staff read+write via mm-hub public.gr_grower_tags; 0052' },
+  'core.grower_classification_override': { cls: 'internal-only',
+    why: '0062 forced grower/non-grower classification, applied by refresh_dim_grower() so it survives every entity sync (curated state never lives on a rebuilt dim). Internal curation only — deliberately NO write policy for any JWT role; edited via service_role/migration' },
   'core.portal_grower_activation': { cls: 'staff-readable',
     why: '0059 portal activation store (grower-portal Sprint 22) — staff read it through semantic.grower_directory.portal_enabled; writes go ONLY through the admin-gated SECURITY DEFINER semantic.set_grower_portal_enabled() (A7), so there is deliberately NO authenticated write policy' },
 
