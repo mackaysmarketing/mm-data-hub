@@ -1,3 +1,54 @@
+# Handoff (2026-07-21): portal activation — first write path + admin tier (0059)
+
+Status: **✅ built, applied to prod, all proofs green, adversarially reviewed (0 surviving
+findings).** Push manual. Input: grower-portal Sprint 22 ask. Cross-repo response:
+`docs/grower-portal-activation-response.md`.
+
+## What landed
+- **`0059_grower_portal_activation`:** `core.portal_grower_activation` (consignor_id PK → FK
+  dim_grower, enabled, updated_at, updated_by) — a SEPARATE table, NOT a dim column, because
+  `refresh_dim_grower()` rebuilds the dim and curated state on a rebuilt dim gets silently reset
+  (the revenue_class lesson). `semantic.grower_directory` v3 gains **`portal_enabled`**
+  (`coalesce(a.enabled,false)` — absence = false, so a new FreshTrack consignor never
+  auto-appears). Seeded: the 2 pilot groups = 9 consignors (LRCOL+LRCLA+LRCTU,
+  MACKF+MACBO/MACGT/MACMR/MACRR/MACSD), resolved by CODE + the 0058 hierarchy.
+- **THE REPO'S FIRST SECURITY DEFINER FUNCTION + FIRST JWT-CALLER WRITE PATH:**
+  `semantic.set_grower_portal_enabled(p_consignor_ids uuid[], p_enabled boolean) returns void`
+  (signature verbatim from the ask — the portal is already built against it), gated on the new
+  **`semantic.auth0_is_admin()`** (`hub_role` ∈ {admin, hub_admin}, JSON string, issuer-pinned,
+  namespace-by-issuer, fail-closed). Three hardenings over the ask's illustrative SQL:
+  `search_path = ''` (theirs had `public` on it — the classic definer escalation vector),
+  EXECUTE revoked from PUBLIC, and loud failure on unknown ids (23503) / null p_enabled (22004).
+- **ADMIN ≠ STAFF ≠ INTERNAL:** admin is a WRITE gate only — an admin-without-staff token reads
+  0 rows on the directory AND all 7 grower relations (proven); staff cannot toggle (42501);
+  authorization is checked BEFORE argument validation.
+- **New standing guard — `rls_posture` A7:** every SECURITY DEFINER function in raw/core/semantic
+  must be on a pinned list, pin an EMPTY search_path, and never be PUBLIC/anon-executable.
+  (Before 0059 there were zero definer functions; now exactly one.) New posture class
+  `staff-readable` for the activation table (read = `auth0_is_staff()`; NO write policy for any
+  JWT role by design — writes go only through the definer RPC).
+
+## Evidence (2026-07-21, self-derived, loaders quiescent)
+`auth0:rls` **232/232** (new §S6 = the full authorization matrix; every RPC call inside a
+rolled-back transaction so the proof stays read-only) · `portal:verify` **33/33** (new §F9:
+portal_enabled never null, enabled set == the 9 pilot consignors derived in-run, default-false
+holds, staff write refused) · `rls:posture` **105/105 · 0 anomalies** · `rls:multifarm` 50/50 ·
+typecheck clean · tests 139/139.
+
+## Adversarial review (30 agents, 4 lenses × 2 refute-by-default verifiers) — 0 survivors
+Two conceded facts acted on: (1) **fixed** — the seed's `on conflict do update` would have
+reverted an admin's deactivation on any re-run and misattributed it via a stale `updated_by`;
+now `do nothing` (first-run default only; applied prod state byte-identical). (2) **recorded
+residual, unreachable today** — the Hub MCP `run_select` guard's `\bset\b` does not match
+`set_grower_portal_enabled`; inert because MCP claims carry no Auth0 `iss` (→ 42501) and the MCP
+always rolls back. Would matter only if the MCP ever carries an Auth0 token — harden the guard
+IN THAT CHANGE. Tracked as a separate MCP-side task.
+
+## Numbering
+The tenant-cutover CLEANUP migration is now **0060** (0058 = directory hierarchy, 0059 = this).
+It must drop the old issuer/namespace from **five** helpers — `auth0_consignor_ids`,
+`auth0_is_staff`, `auth0_is_admin`, plus the two deny guards. Docs updated.
+
 # Handoff (2026-07-20): grower directory v2 — parent hierarchy (0058)
 
 Status: **✅ built, applied to prod, all proofs green.** Push manual.

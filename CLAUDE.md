@@ -56,8 +56,9 @@ repos — coordinate first; full contract: `docs/mm-hub-auth0-integration.md`.
   All four claim helpers resolve namespace BY ISSUER and honor each issuer's claims ONLY under
   its own namespace; the app_metadata deny guards refuse BOTH Auth0 issuers (the FUTURE-ISSUER
   invariant compliance case). Runbook + remaining steps: `docs/auth0-tenant-cutover.md`. After
-  cutover, 0059 drops the old issuer/namespace and this section is rewritten single-tenant
-  (0058 was taken by the directory-hierarchy ask).
+  cutover, **0060** drops the old issuer/namespace from all FIVE claim helpers and this section
+  is rewritten single-tenant (0058/0059 were taken by the directory-hierarchy and activation
+  asks).
 - **`semantic.auth0_consignor_ids()`** honors that claim ONLY when `iss` equals the Auth0 issuer
   EXACTLY (incl. trailing slash); any other/missing issuer → empty set. Array-only, per-element
   uuid-validated, de-duplicated, fail-closed — the 0026 parsing rigor.
@@ -77,7 +78,20 @@ repos — coordinate first; full contract: `docs/mm-hub-auth0-integration.md`.
   contexts get 0 rows). Directory v2 (0058): + `entity_id`/`parent_entity_id`/`parent_name` —
   the FreshTrack parent hierarchy (raw.ft_entity.parent_id, denormalized onto dim_grower at
   refresh because raw is ungranted); the portal groups by immediate parent. Proof: portal:verify
-  F8. **Staff ≠ internal:** the claim NEVER opens internal-only surfaces
+  F8. Directory v3 (0059): + `portal_enabled` — admin-curated activation from
+  `core.portal_grower_activation` (SEPARATE table, not a dim column: the dim is rebuilt and
+  curated state on a rebuilt dim gets silently reset — the revenue_class lesson). Absence of a
+  row = false, so a new FreshTrack consignor never auto-appears. Seeded: LRCOL+LRCLA+LRCTU,
+  MACKF+5 farms.
+- **ADMIN tier + the FIRST write path (0059):** `semantic.auth0_is_admin()` — `hub_role` claim ∈
+  {admin, hub_admin}, JSON string, issuer-pinned/namespace-by-issuer, fail-closed — gates
+  `semantic.set_grower_portal_enabled(uuid[], boolean)`, this repo's FIRST **SECURITY DEFINER**
+  function. **Admin ≠ staff ≠ internal:** admin is a WRITE gate only (an admin-without-staff
+  token reads 0 rows everywhere — proven); staff cannot toggle activation (42501). Definer rules
+  now enforced by **rls_posture A7**: every security-definer function in raw/core/semantic must
+  be on the pinned list, pin an EMPTY `search_path`, and never be PUBLIC/anon-executable —
+  extend the pin in the same change or the sweep fails. Proof: `auth0:rls` S6 (authorization
+  matrix, every call rolled back), `portal:verify` F9. **Staff ≠ internal:** the claim NEVER opens internal-only surfaces
   (customer book, AR, scan, insight). Accepted residual: an Auth0 tenant admin flipping
   `mm_staff` = read of the whole grower surface — keep the tenant admin set small + MFA'd.
   Moving the internal staff hub (mm-hub) itself onto Auth0 is the stated direction but a

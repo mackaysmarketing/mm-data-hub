@@ -22,6 +22,11 @@
 //   F7  schedule 1329 (Tim's fixture): via the LRCTU grower token, each of its
 //       loads shows retailer_group (grower_load_sale) + per-category deductions
 //       (grower_gp_settlement_load).
+//   F9  portal activation (Sprint 22 / 0059): portal_enabled is present and NEVER
+//       null; every consignor with no activation row reads false (default-false —
+//       a new FreshTrack consignor never auto-appears); the enabled set is EXACTLY
+//       the two seeded pilot groups, derived in-run from grower codes + the 0058
+//       hierarchy; and the write RPC refuses a staff (non-admin) caller.
 //   F8  directory hierarchy (Sprint 19 / 0058): dim parent columns match a live
 //       recomputation from raw.ft_entity (drift=0); staff token sees the full
 //       directory with the three v2 columns; the test pair shares ONE non-null
@@ -309,6 +314,56 @@ async function main(): Promise<void> {
     const f8grower = await underCtx(c, pairTok, () =>
       q1<{ n: string }>(c, `select count(*) n from semantic.grower_directory`));
     check('grower (pair) token → 0 directory rows', Number(f8grower.n) === 0, `got ${f8grower.n}`);
+
+    // ── F9: portal activation (Sprint 22 / 0059) ─────────────────────────────────
+    log('\n=== F9  grower_directory v3: portal_enabled (admin-curated activation) ===');
+    // The pilot groups the ask names, resolved by CODE + the 0058 hierarchy (never by uuid).
+    const PILOT_ANCHORS = ['LRCOL', 'MACKF'];
+    const f9expect = await q1<{ n: string; codes: string }>(c, `
+      with anchors as (select consignor_id, entity_id from core.dim_grower where code = any($1))
+      select count(*)::text n, string_agg(g.code, ',' order by g.code) codes
+      from core.dim_grower g
+      where g.is_grower is true and coalesce(g.is_test, false) = false
+        and (g.consignor_id in (select consignor_id from anchors)
+          or g.parent_entity_id in (select entity_id from anchors))`, [PILOT_ANCHORS]);
+    const f9 = await underCtx(c, staffTok, () =>
+      q1<{ rows: string; nulls: string; enabled: string; enabled_codes: string | null }>(c, `
+        select count(*)::text rows,
+               count(*) filter (where portal_enabled is null)::text nulls,
+               count(*) filter (where portal_enabled)::text enabled,
+               string_agg(farm_code, ',' order by farm_code) filter (where portal_enabled) enabled_codes
+        from semantic.grower_directory`));
+    check(`portal_enabled is never null (${f9.nulls} nulls over ${f9.rows} rows)`, Number(f9.nulls) === 0);
+    check(`enabled set == the seeded pilot groups (${f9.enabled} of ${f9.rows})`,
+      f9.enabled === f9expect.n && f9.enabled_codes === f9expect.codes,
+      `got [${f9.enabled_codes ?? ''}] expect [${f9expect.codes}]`);
+    // Default-false: no activation row must ever read as enabled.
+    const f9default = await underCtx(c, staffTok, () =>
+      q1<{ bad: string }>(c, `
+        select count(*)::text bad
+        from semantic.grower_directory d
+        where d.portal_enabled
+          and not exists (select 1 from core.portal_grower_activation a
+                           where a.consignor_id = d.consignor_id and a.enabled)`));
+    check('every enabled row is backed by an activation row (default-false holds)',
+      Number(f9default.bad) === 0, `unbacked=${f9default.bad}`);
+    // The portal's own guard: a staff (non-admin) session must NOT be able to toggle.
+    const f9staffWrite = await (async () => {
+      await c.query('begin');
+      try {
+        await c.query('set local role authenticated');
+        await c.query("select set_config('request.jwt.claims', $1, true)", [staffTok]);
+        await c.query(`select semantic.set_grower_portal_enabled(
+          (select array_agg(consignor_id) from core.dim_grower where code = 'LRCLA')::uuid[], false)`);
+        return 'ok';
+      } catch (e) {
+        return (e as { code?: string }).code ?? 'ERR';
+      } finally {
+        await c.query('rollback');
+      }
+    })();
+    check('staff (non-admin) token cannot toggle activation — RPC refuses 42501',
+      f9staffWrite === '42501', `got ${f9staffWrite}`);
 
     const failed = results.filter((r) => !r.pass);
     log(`\n=== ${results.length - failed.length}/${results.length} checks passed ===`);

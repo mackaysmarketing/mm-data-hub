@@ -33,6 +33,12 @@
 //       ungranted surfaces stay permission-denied.
 //   S5  grower_directory: staff == owner-derived grower list (non-test, is_grower); grower,
 //       mm-hub-internal (deliberate), and no-claim tokens all → 0 rows.
+//   S6  ADMIN tier (0059): auth0_is_admin() is strict/issuer-pinned/fail-closed; the
+//       SECURITY DEFINER write RPC semantic.set_grower_portal_enabled() REFUSES growers,
+//       staff-who-are-not-admin, no-claim, and off-issuer callers (42501), accepts admin, is
+//       atomic on unknown ids (23503) and validates its args; and the admin claim widens NO
+//       data surface (admin-without-staff still reads 0 directory rows, 0 internal rows).
+//       Every RPC call runs inside a transaction that ROLLS BACK — the proof stays read-only.
 //
 // Tenant-migration sections (0057 — the mackaysmarketing tenant beside grower-portal, each
 // issuer honored ONLY under its OWN claim namespace):
@@ -62,6 +68,9 @@ const STAFF = 'https://grower-portal.mackays.com.au/staff';
 const NEW_ISS = 'https://mackaysmarketing.au.auth0.com/';
 const CLAIM2 = 'https://mackaysmarketing.com.au/consignor_ids';
 const STAFF2 = 'https://mackaysmarketing.com.au/staff';
+// 0059 admin tier — the hub_role claim under each issuer's own namespace.
+const ROLE = 'https://grower-portal.mackays.com.au/hub_role';
+const ROLE2 = 'https://mackaysmarketing.com.au/hub_role';
 const SUPA_ISS = 'https://uqzfkhsdyeokwnkpcxui.supabase.co/auth/v1';
 
 const TABLES = [
@@ -110,6 +119,9 @@ const auth0Tok2 = (ids: string[], extra: object = {}) =>
   JSON.stringify({ iss: NEW_ISS, role: 'authenticated', [CLAIM2]: ids, ...extra });
 const staffTok2 = (extra: object = {}) =>
   JSON.stringify({ iss: NEW_ISS, role: 'authenticated', [STAFF2]: true, ...extra });
+// A real internal admin carries BOTH claims (staff = read the directory, hub_role = write it).
+const adminTok = (hubRole = 'admin', extra: object = {}) =>
+  JSON.stringify({ iss: NEW_ISS, role: 'authenticated', [STAFF2]: true, [ROLE2]: hubRole, sub: 'auth0|proof-admin', ...extra });
 
 async function underCtx<T>(c: PoolClient, claimsJson: string | null, fn: () => Promise<T>): Promise<T> {
   await c.query('begin');
@@ -152,6 +164,22 @@ async function fnUnder<T>(c: PoolClient, rawClaims: string, expr: string): Promi
   try {
     await c.query("select set_config('request.jwt.claims', $1, true)", [rawClaims]);
     return (await c.query(`select ${expr} as v`)).rows[0]!.v as T;
+  } finally {
+    await c.query('rollback');
+  }
+}
+/** Call the 0059 write RPC under a claims context; returns 'ok' or the SQLSTATE. ALWAYS rolls
+ *  back — the RPC is SECURITY DEFINER (runs as owner) so the rollback is what keeps this proof
+ *  read-only against the live hub. */
+async function rpcSet(c: PoolClient, claimsJson: string | null, ids: string[], enabled: boolean | null): Promise<string> {
+  await c.query('begin');
+  try {
+    await c.query('set local role authenticated');
+    await c.query("select set_config('request.jwt.claims', $1, true)", [claimsJson ?? '']);
+    await c.query('select semantic.set_grower_portal_enabled($1::uuid[], $2::boolean)', [ids, enabled]);
+    return 'ok';
+  } catch (e) {
+    return (e as { code?: string }).code ?? 'ERR';
   } finally {
     await c.query('rollback');
   }
@@ -455,6 +483,116 @@ async function main(): Promise<void> {
     const dirForged = await count(
       c, JSON.stringify({ iss: SUPA_ISS, role: 'authenticated', [STAFF]: true }), 'semantic.grower_directory');
     check('Supabase-iss token carrying the staff claim → 0 directory rows', dirForged === 0, `got ${dirForged}`);
+
+    // ── S6: the ADMIN tier (0059) — helper strictness, RPC authorization, no data widening ──
+    log('\n=== S6  semantic.auth0_is_admin() + the admin-gated write RPC (0059) ===');
+    const admin = (raw: string) => fnUnder<boolean>(c, raw, 'semantic.auth0_is_admin()');
+    check('hub_role="admin" on the Auth0 issuer → true', (await admin(adminTok('admin'))) === true);
+    check('hub_role="hub_admin" → true', (await admin(adminTok('hub_admin'))) === true);
+    check('hub_role="staff" → false (staff is NOT admin — the whole point of the tier)',
+      (await admin(adminTok('staff'))) === false);
+    check('hub_role="grower_admin" → false', (await admin(adminTok('grower_admin'))) === false);
+    check('hub_role="ADMIN" (case) → false', (await admin(adminTok('ADMIN'))) === false);
+    check('hub_role=" admin " (whitespace) → false', (await admin(adminTok(' admin '))) === false);
+    check('hub_role=["admin"] (array) → false',
+      (await admin(JSON.stringify({ iss: NEW_ISS, role: 'authenticated', [ROLE2]: ['admin'] }))) === false);
+    check('hub_role=true (boolean) → false',
+      (await admin(JSON.stringify({ iss: NEW_ISS, role: 'authenticated', [ROLE2]: true }))) === false);
+    check('hub_role absent → false', (await admin(staffTok2())) === false);
+    check('CROSS: old-namespace hub_role under NEW issuer → false',
+      (await admin(JSON.stringify({ iss: NEW_ISS, role: 'authenticated', [ROLE]: 'admin' }))) === false);
+    check('CROSS: new-namespace hub_role under OLD issuer → false',
+      (await admin(JSON.stringify({ iss: AUTH0_ISS, role: 'authenticated', [ROLE2]: 'admin' }))) === false);
+    check('hub_role under the Supabase issuer → false',
+      (await admin(JSON.stringify({ iss: SUPA_ISS, role: 'authenticated', [ROLE2]: 'admin' }))) === false);
+    check('hub_role with NO issuer (Cube/MCP shape) → false',
+      (await admin(JSON.stringify({ role: 'authenticated', [ROLE2]: 'admin' }))) === false);
+    check('hub_role smuggled in app_metadata → false',
+      (await admin(auth0Tok2([], { app_metadata: { hub_role: 'admin' } }))) === false);
+    check('mm-hub internal token → false (admin is an Auth0-issuer claim only)',
+      (await admin(hubTok({ app_metadata: { is_internal: true } }))) === false);
+    check('no claims at all → false', (await admin('')) === false);
+    let aThrew = false; let aBad = true;
+    try { aBad = await admin('{not valid json'); } catch { aThrew = true; }
+    check('malformed claims JSON → false, never errors', !aThrew && aBad === false);
+
+    // Fixtures for the RPC matrix: one currently-enabled consignor + a uuid that is NOT a grower.
+    const seedRow = (await c.query<{ consignor_id: string }>(
+      `select consignor_id from core.portal_grower_activation where enabled order by consignor_id limit 1`)).rows[0];
+    check('activation fixture: at least one enabled consignor exists (0059 seed)', !!seedRow);
+    const target = seedRow?.consignor_id ?? A;
+    const ghost = (await c.query<{ id: string }>(
+      `select gen_random_uuid() id where not exists (select 1 from core.dim_grower where consignor_id = gen_random_uuid())`)
+    ).rows[0]!.id;
+
+    // Authorization matrix — every non-admin caller must be REFUSED 42501.
+    const REFUSED = '42501';
+    check('grower token → RPC refused', (await rpcSet(c, auth0Tok2([A]), [target], false)) === REFUSED);
+    check('STAFF (not admin) token → RPC refused — an MM User cannot toggle visibility',
+      (await rpcSet(c, staffTok2(), [target], false)) === REFUSED);
+    check('hub_role=staff token → RPC refused', (await rpcSet(c, adminTok('staff'), [target], false)) === REFUSED);
+    check('no-claim token → RPC refused', (await rpcSet(c, null, [target], false)) === REFUSED);
+    check('mm-hub internal token → RPC refused (internal ≠ portal admin)',
+      (await rpcSet(c, hubTok({ app_metadata: { is_internal: true } }), [target], false)) === REFUSED);
+    check('Supabase-issuer token carrying hub_role=admin → RPC refused',
+      (await rpcSet(c, JSON.stringify({ iss: SUPA_ISS, role: 'authenticated', [ROLE2]: 'admin' }), [target], false)) === REFUSED);
+    check('OLD-issuer token carrying new-namespace hub_role=admin → RPC refused',
+      (await rpcSet(c, JSON.stringify({ iss: AUTH0_ISS, role: 'authenticated', [ROLE2]: 'admin' }), [target], false)) === REFUSED);
+    check('ADMIN token → RPC accepted', (await rpcSet(c, adminTok('admin'), [target], false)) === 'ok');
+    check('hub_admin token → RPC accepted', (await rpcSet(c, adminTok('hub_admin'), [target], true)) === 'ok');
+
+    // Argument handling: loud on unknown ids, explicit on null, no-op on empty.
+    check('admin + UNKNOWN consignor_id → 23503 (surfaced, whole call atomic)',
+      (await rpcSet(c, adminTok(), [target, ghost], true)) === '23503');
+    check('admin + null p_enabled → 22004 (never silently coerced)',
+      (await rpcSet(c, adminTok(), [target], null)) === '22004');
+    check('admin + empty array → no-op, not an error', (await rpcSet(c, adminTok(), [], true)) === 'ok');
+    // A refused caller must not even reach argument validation (authorization is checked FIRST).
+    check('staff + null p_enabled → still 42501 (authz precedes validation)',
+      (await rpcSet(c, staffTok2(), [target], null)) === REFUSED);
+
+    // Round trip: an admin toggle is visible to a staff read, in the same transaction, then rolled back.
+    const trip = await (async () => {
+      await c.query('begin');
+      try {
+        await c.query('set local role authenticated');
+        const readEnabled = async (): Promise<boolean | null> => {
+          const r = await c.query<{ portal_enabled: boolean }>(
+            `select portal_enabled from semantic.grower_directory where consignor_id = $1`, [target]);
+          return r.rows[0]?.portal_enabled ?? null;
+        };
+        await c.query("select set_config('request.jwt.claims', $1, true)", [staffTok2()]);
+        const before = await readEnabled();
+        await c.query("select set_config('request.jwt.claims', $1, true)", [adminTok()]);
+        await c.query('select semantic.set_grower_portal_enabled($1::uuid[], $2::boolean)', [[target], false]);
+        await c.query("select set_config('request.jwt.claims', $1, true)", [staffTok2()]);
+        const after = await readEnabled();
+        const audit = (await c.query<{ updated_by: string | null }>(
+          `select updated_by from core.portal_grower_activation where consignor_id = $1`, [target])).rows[0];
+        return { before, after, audit: audit?.updated_by ?? null };
+      } finally {
+        await c.query('rollback');
+      }
+    })();
+    check(`admin toggle is visible to a staff read (before=${trip.before} → after=${trip.after})`,
+      trip.before === true && trip.after === false);
+    check('the toggle records the admin JWT sub as updated_by', trip.audit === 'auth0|proof-admin', `got ${trip.audit}`);
+
+    // The admin claim must widen NO data surface — it is a write gate, not a read grant.
+    const adminOnly = JSON.stringify({ iss: NEW_ISS, role: 'authenticated', [ROLE2]: 'admin' }); // admin, NOT staff
+    check('admin-WITHOUT-staff → 0 directory rows (admin is not a read grant)',
+      (await count(c, adminOnly, 'semantic.grower_directory')) === 0);
+    for (const t of TABLES) {
+      const n = await count(c, adminOnly, t);
+      check(`${t}: admin-without-staff sees 0 rows`, n === 0, `got ${n}`);
+    }
+    check('admin token: internal-only core.fact_customer_invoice still 0',
+      (await count(c, adminTok(), 'core.fact_customer_invoice')) === 0);
+    check('admin token: staff row scope unchanged (dispatch loads == owner total)',
+      (await count(c, adminTok(), 'raw.ft_dispatch_load')) === EXPECTED['raw.ft_dispatch_load']!.internal);
+    // Growers must not see the activation store directly either.
+    check('grower token → 0 rows on core.portal_grower_activation',
+      (await count(c, auth0Tok2([A]), 'core.portal_grower_activation')) === 0);
 
     // ── T1: new tenant (0057) — helper semantics + cross-namespace forgeries inert ───────────
     log('\n=== T1  mackaysmarketing tenant: helpers honor ONLY the own-namespace claims ===');

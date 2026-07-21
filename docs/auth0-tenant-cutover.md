@@ -139,8 +139,10 @@ with app_metadata below, then the smoke checks.
 
 ### 4. Cleanup (hub session, AFTER the portal is stable on the new tenant)
 - Remove `grower-portal` from Supabase third-party auth.
-- Hub migration **0059** (0058 was taken by the grower-directory hierarchy, Sprint 19): drop
-  the old issuer + namespace from the four helpers (collapse the CASE to the single new
+- Hub migration **0060** (0058/0059 were taken by the grower-directory hierarchy and the portal
+  activation asks): drop the old issuer + namespace from the FIVE claim helpers —
+  `auth0_consignor_ids`, `auth0_is_staff`, `auth0_is_admin` (0059), and the two deny guards in
+  `current_consignor_ids` / `is_internal_claim` (collapse each CASE/IN to the single new
   tenant); trim the old-path proof sections/constants.
 - CLAUDE.md: rewrite the Auth0 section to single-tenant facts.
 - Park/delete the old Auth0 tenant (takes the old apps — including the 2026-07-19 staff app,

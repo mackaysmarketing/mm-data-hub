@@ -19,6 +19,11 @@
 //                          cube_readonly read-all policy; grants authenticated+cube_readonly.
 //   internal-only          table; RLS on; authenticated policy = semantic.is_internal_claim();
 //                          cube policy; grants authenticated+cube_readonly.
+//   staff-readable         table; RLS on; authenticated policy = semantic.auth0_is_staff()
+//                          (the portal staff audience, 0056/0057); cube policy; grants
+//                          authenticated+cube_readonly. WRITES are never policy-granted to a
+//                          JWT role — they go through an admin-gated SECURITY DEFINER RPC
+//                          (0059 core.portal_grower_activation is the only member).
 //   shared-reference       table; RLS on; authenticated using(true) policy; cube policy;
 //                          grants authenticated+cube_readonly (harmless lookup a
 //                          grower-facing view may join — 0030 dim_dispatch_state rationale).
@@ -48,6 +53,10 @@
 //   A5 any grantee outside {postgres, authenticated, cube_readonly} (hub_mcp must
 //      hold NO standing grants per 0013; anon/PUBLIC must never appear).
 //   A6 the app_metadata-only fail-closed helper functions exist.
+//   A7 SECURITY DEFINER functions in raw/core/semantic are exactly the pinned set (0059's
+//      admin-gated write RPC is the only one), each pins an EMPTY search_path, and none is
+//      EXECUTE-able by PUBLIC or anon. A definer function runs with owner rights and bypasses
+//      RLS, so an unpinned search_path or a PUBLIC grant is a privilege-escalation path.
 //
 // Entries marked pending:true are objects this sprint adds (C1/C2); absent live
 // they are NOTED, present they are asserted. Exit 0 = zero unclassified + zero
@@ -60,6 +69,7 @@ import { isMain, log } from '../src/lib/util.ts';
 type PostureClass =
   | 'grower-scoped'
   | 'internal-only'
+  | 'staff-readable'
   | 'shared-reference'
   | 'cube-only'
   | 'etl-only'
@@ -177,6 +187,8 @@ const REGISTRY: Record<string, RegistryEntry> = {
     why: 'register grower-attribution tags — staff read+WRITE via mm-hub public.gr_block_tags (invoker, auto-updatable); first registered interactive-write surface (0052)' },
   'core.parcel_grower_tag':      { cls: 'internal-only', writes: 'internal',
     why: 'register parcel tags — staff read+write via mm-hub public.gr_grower_tags; 0052' },
+  'core.portal_grower_activation': { cls: 'staff-readable',
+    why: '0059 portal activation store (grower-portal Sprint 22) — staff read it through semantic.grower_directory.portal_enabled; writes go ONLY through the admin-gated SECURITY DEFINER semantic.set_grower_portal_enabled() (A7), so there is deliberately NO authenticated write policy' },
 
   // ── semantic ───────────────────────────────────────────────────────────────
   'semantic.grower_dispatch_detail':        { cls: 'semantic-invoker', invoker: true, why: '0008/0022; scope = raw dispatch/pallet + dim_grower RLS; 0055 cleans product (+product_raw)' },
@@ -244,7 +256,7 @@ function assertPosture(r: Rel, e: RegistryEntry, grants: Set<string>, pols: Pol[
   const ap = authPolicies(pols);
   const apQual = ap.map((p) => (p.qual ?? '').replace(/\s+/g, ' ').trim());
 
-  const wantTable = ['grower-scoped', 'internal-only', 'shared-reference', 'cube-only', 'etl-only'].includes(e.cls);
+  const wantTable = ['grower-scoped', 'internal-only', 'staff-readable', 'shared-reference', 'cube-only', 'etl-only'].includes(e.cls);
   if (wantTable && !isTable) errs.push(`expected a table for class ${e.cls}, found relkind=${r.kind}`);
   if (!wantTable && isTable) errs.push(`expected a view for class ${e.cls}, found a table`);
   if (errs.length) return errs.join('; ');
@@ -275,6 +287,17 @@ function assertPosture(r: Rel, e: RegistryEntry, grants: Set<string>, pols: Pol[
       if (!apQual.some((q) => q === 'semantic.is_internal_claim()'))
         errs.push(`no authenticated is_internal_claim() policy (found: ${apQual.join(' | ') || 'none'})`);
       if (apQual.some((q) => q === 'true')) errs.push('has an authenticated using(true) policy — wrong flavor (that is shared-reference)');
+      break;
+    }
+    case 'staff-readable': {
+      if (!r.rls) errs.push('RLS is OFF');
+      if (!auth) errs.push('missing authenticated grant');
+      if (!cube) errs.push('missing cube_readonly grant');
+      if (!hasCubePolicy(pols)) errs.push('missing cube_readonly read-all policy');
+      if (!apQual.some((q) => q === 'semantic.auth0_is_staff()'))
+        errs.push(`no authenticated policy quals exactly semantic.auth0_is_staff() (0059; found: ${apQual.join(' | ') || 'none'})`);
+      if (apQual.some((q) => q === 'true'))
+        errs.push('has an authenticated using(true) policy — staff-readable must stay claim-gated');
       break;
     }
     case 'shared-reference': {
@@ -365,10 +388,11 @@ export async function sweep(c: PoolClient): Promise<boolean> {
     `select to_regprocedure('semantic.current_consignor_ids()')::text as ids,
             to_regprocedure('semantic.is_internal_claim()')::text     as internal,
             to_regprocedure('semantic.auth0_consignor_ids()')::text   as auth0,
-            to_regprocedure('semantic.auth0_is_staff()')::text        as staff`,
+            to_regprocedure('semantic.auth0_is_staff()')::text        as staff,
+            to_regprocedure('semantic.auth0_is_admin()')::text        as admin`,
   )).rows[0]!;
-  if (!helpers.ids || !helpers.internal || !helpers.auth0 || !helpers.staff)
-    fail(`A6 helper functions missing: current_consignor_ids=${helpers.ids} is_internal_claim=${helpers.internal} auth0_consignor_ids=${helpers.auth0} auth0_is_staff=${helpers.staff}`);
+  if (!helpers.ids || !helpers.internal || !helpers.auth0 || !helpers.staff || !helpers.admin)
+    fail(`A6 helper functions missing: current_consignor_ids=${helpers.ids} is_internal_claim=${helpers.internal} auth0_consignor_ids=${helpers.auth0} auth0_is_staff=${helpers.staff} auth0_is_admin=${helpers.admin}`);
 
   // ── Registry sweep ──────────────────────────────────────────────────────────
   log(`\nlive relations: ${rels.length} · registry entries: ${Object.keys(REGISTRY).length}`);
@@ -470,7 +494,41 @@ export async function sweep(c: PoolClient): Promise<boolean> {
     else if (!ALLOWED_GRANTEES.has(s.grantee))
       fail(`A6 ${s.rel}: sequence granted ${s.priv} to unexpected grantee "${s.grantee}"`);
   }
-  log(problems.some((p) => p.startsWith('A')) ? '  anomalies found (listed below)' : `  no anomalies (incl. ${seqGrants.length} sequence grant(s) checked)`);
+  // A7: SECURITY DEFINER functions — pinned set, empty search_path, never PUBLIC/anon-executable.
+  // Such a function runs with OWNER rights and bypasses RLS, so its authorization check is the
+  // only gate: an unpinned (or public-containing) search_path lets a same-named object shadow
+  // what it references, and a PUBLIC grant hands the write path to anon.
+  const DEFINER_PINNED = new Set(['semantic.set_grower_portal_enabled']);
+  const definers = (await c.query<{ fn: string; cfg: string; acl: string }>(
+    `select n.nspname || '.' || p.proname as fn,
+            coalesce(array_to_string(p.proconfig, ','), '') as cfg,
+            coalesce(p.proacl::text, '') as acl
+       from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+      where n.nspname in ('raw', 'core', 'semantic') and p.prosecdef
+      order by 1`,
+  )).rows;
+  for (const d of definers) {
+    if (!DEFINER_PINNED.has(d.fn)) {
+      fail(`A7 ${d.fn}: UNPINNED SECURITY DEFINER function — add it to DEFINER_PINNED in scripts/rls_posture.ts with a documented authorization gate, or drop SECURITY DEFINER`);
+      continue;
+    }
+    // proconfig for `set search_path = ''` is exactly search_path="" — anything else is drift.
+    if (d.cfg.replace(/\s/g, '') !== 'search_path=""')
+      fail(`A7 ${d.fn}: search_path is not pinned EMPTY (proconfig=${d.cfg || 'none'}) — escalation vector`);
+    // aclitem text: PUBLIC is the empty grantee, i.e. a bare "=X/..." entry.
+    if (/(^|[{,])=/.test(d.acl))
+      fail(`A7 ${d.fn}: EXECUTE granted to PUBLIC (acl=${d.acl}) — anon could reach a definer write path`);
+    if (d.acl.includes('anon='))
+      fail(`A7 ${d.fn}: EXECUTE granted to anon (acl=${d.acl})`);
+    if (!d.acl.includes('authenticated='))
+      fail(`A7 ${d.fn}: no EXECUTE grant to authenticated (acl=${d.acl}) — the portal RPC would 42501 for every caller`);
+  }
+  for (const want of DEFINER_PINNED) {
+    if (!definers.some((d) => d.fn === want))
+      fail(`A7 pinned SECURITY DEFINER function ${want} is MISSING live (dropped without updating the pin?)`);
+  }
+
+  log(problems.some((p) => p.startsWith('A')) ? '  anomalies found (listed below)' : `  no anomalies (incl. ${seqGrants.length} sequence grant(s) + ${definers.length} security-definer function(s) checked)`);
 
   // ── Summary ─────────────────────────────────────────────────────────────────
   log('\n--- Summary ---');
