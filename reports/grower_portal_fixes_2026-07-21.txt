@@ -54,7 +54,9 @@ fixtures: LRCLA=019439a6-fb95-f543-c2e0-40d9f9b719fa LRCTU=019439a8-7d01-187c-89
 
 === F9  grower_directory v3: portal_enabled (admin-curated activation) ===
   PASS  portal_enabled is never null (0 nulls over 99 rows)
-  FAIL  enabled set == the seeded pilot groups (32 of 99) — got [GJFLE,GJFMF,GJFSD,GJFTF,LAUGO,LMBBF,LMBCO,LMBEP,LMBFA,LRCLA,LRCOL,LRCTU,MACBO,MACGT,MACKF,MACMR,MACRR,MACSD,NOUBC,NOUHO,NOUNE,NOUPA,NOUSB,NOUST,PRIMO,ROCKR,ROLFE,SERAV,SERRA,SLOWE,WADDA,ZONTA] expect [LRCLA,LRCOL,LRCTU,MACBO,MACGT,MACKF,MACMR,MACRR,MACSD]
+  enabled set (29 of 99, reported not asserted): ALCOC,DANDY,GJFLE,GJFMF,JUSTE,LAUGO,LMBCO,LMBEP,LMBFA,LRCLA,LRCOL,LRCTU,MACBO,MACGT,MACKF,MACRR,MACSD,NOUBC,NOUPA,OBIFW,PRIMO,ROCKR,ROLFE,SANGH,SERAV,SERRA,SLOWE,WADDA,ZONTA
+  PASS  directory enabled (29) == activation store enabled (29)
+  PASS  no test / inactive / non-grower consignor is portal-enabled — offenders []
   PASS  every enabled row is backed by an activation row (default-false holds) — unbacked=0
   PASS  staff (non-admin) token cannot toggle activation — RPC refuses 42501 — got 42501
 
@@ -66,5 +68,4 @@ fixtures: LRCLA=019439a6-fb95-f543-c2e0-40d9f9b719fa LRCTU=019439a8-7d01-187c-89
   PASS  test pair via grower token sees origin_load_no on its settlement lines (244 of 244)
   PASS  grower_gp_settlement_load: no-claim token → 0 rows (fail closed) — got 0
 
-=== 41/42 checks passed ===
-FAILED: enabled set == the seeded pilot groups (32 of 99)
+=== 43/43 checks passed ===

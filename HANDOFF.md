@@ -1,3 +1,71 @@
+# Handoff (2026-07-22b): portal activation = the 2026 remittance book (0063)
+
+Status: **✅ applied to prod, all proofs green (portal:verify 43/43 — first fully-green run this
+session).** Push manual.
+
+## The rule
+Tim, verbatim: *"The growers that have remittances there are the only ones that should be included
+in the grower portal"*, then *"only use the 2026 files"*.
+
+**Source of truth = SharePoint**, TullyAdmin site:
+`Shared Documents / MBM Admin / 1. New MBM / Remittances / Growers / 2026 / {month} / {pay week}`.
+All **30 pay-week folders** (07.01.2026 → 15.07.2026) enumerated, every file read. One PDF per
+grower per pay week. Read via the Microsoft 365 connector (`read_resource` walking from
+`file:///{driveId}/root`) — **SharePoint search is NOT reliable here**: a folder-scoped search
+returned 8 hits for a tree holding hundreds of files. Walk the tree, don't search it.
+
+Excluded as non-remittances: weekly `Mackays Excel Remittance *.xlsx`, `EXCEL` subfolders,
+lot/load-adjustment PDFs, a stray `debug.log`. Folded into their farm (separate PDF, no separate
+dim row): "Rolfe Papaya" → ROLFE, "Mackays Gold Tyne Passionfruit" → MACGT.
+
+## The result: 32 → 29 enabled
+- **25 consignors have a 2026 remittance** — ALCOC DANDY GJFMF JUSTE LAUGO LMBCO LMBEP LRCLA LRCTU
+  MACBO MACGT MACRR MACSD NOUBC NOUPA OBIFW PRIMO ROCKR ROLFE SANGH SERAV SERRA SLOWE WADDA ZONTA.
+- **+4 parents retained by Tim's explicit decision** — MACKF, LRCOL, LMBFA, GJFLE. They have NO
+  remittance (settlement lands on their farms) but are the 0058 grouping entities and logins are
+  often at parent level; deactivating them would strand a parent login while its farms stayed live.
+  **A deliberate exception to the rule, not an oversight.**
+- **+5 newly enabled — growers being paid but locked out of the portal:** ALCOC (11 schedules in
+  2026), JUSTE (11), OBIFW (7), SANGH (4), DANDY (1).
+- **−8 deactivated (row kept, enabled=false — the audit trail is the point):** GJFSD, GJFTF,
+  LMBBF, MACMR, NOUHO, NOUNE, NOUSB, NOUST.
+
+## Corroboration — the folder and hub settlement agree independently
+| code | SharePoint 2026 | core.fact_gp_settlement |
+|---|---|---|
+| SANGH | 4 "Sangha Bros" PDFs: 18.02, 04.03, 11.03, 18.03 | 4 schedules, last payable **2026-03-18** |
+| DANDY | 1 PDF: 08.07.2026 | 1 schedule, payable **2026-07-08** |
+| OBIFW | Mar/Apr/Jun | 7 schedules, last 2026-07-01 |
+| JUSTE | Jan–Jul | 11 schedules, last 2026-07-01 |
+| ALCOC | Jan–May | 11 schedules, last 2026-05-06 |
+| LMBBF, GJFLE | **absent from 2026** | **0 schedules in 2026** (last 2025) |
+
+Plain "Flegler Remittance" → **GJFMF**: every disambiguated filename says "Mareeba Farm", and GJFMF
+has 27 schedules in 2026 vs GJFLE's 0.
+
+## Traps handled
+- **`dim_grower.code` is NOT unique** — WADDA exists twice (active "Wadda Plantation" + inactive
+  "Wadda Plantation - Gallaghers"). 0063 resolves by **code + is_active** and RAISES if any code
+  fails to resolve to exactly one active row, rather than activating the wrong entity.
+- **F9 in `portal:verify` was a frozen membership list** (the 9 pilot consignors) — the hardcoded
+  baseline CLAUDE.md forbids; it rotted the moment an admin used the 0059 RPC and would have rotted
+  again here. **Replaced with invariants + a reported set:** portal_enabled never null · directory
+  enabled == activation-store enabled · **no test / inactive / non-grower consignor is ever
+  portal-enabled** · every enabled row backed by an activation row · staff cannot toggle.
+
+## ⚠ What this does NOT do
+`portal_grower_activation` feeds exactly ONE display column (`grower_directory.portal_enabled`).
+**No RLS policy anywhere references it.** Deactivating a consignor removes it from the portal's
+directory; it does NOT revoke data access — a token whose Auth0 claim carries that consignor's uuid
+still reads its dispatch, sales and settlement. Closing that still needs the claim-side grower gate
+in `semantic.auth0_consignor_ids()` (designed, still on hold).
+
+## Evidence
+`portal:verify` **43/43** · `rls:posture` **106/106 · 0 anomalies** · `auth0:rls` **232/232** ·
+tests **139/139** · typecheck clean.
+
+---
+
 # Handoff (2026-07-22): grower classification override (0062) + two audits — DECISIONS PENDING
 
 Status: **✅ 0062 built, applied to prod, proofs green. Both audits complete and filed. Everything

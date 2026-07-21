@@ -356,15 +356,10 @@ async function main(): Promise<void> {
 
     // ── F9: portal activation (Sprint 22 / 0059) ─────────────────────────────────
     log('\n=== F9  grower_directory v3: portal_enabled (admin-curated activation) ===');
-    // The pilot groups the ask names, resolved by CODE + the 0058 hierarchy (never by uuid).
-    const PILOT_ANCHORS = ['LRCOL', 'MACKF'];
-    const f9expect = await q1<{ n: string; codes: string }>(c, `
-      with anchors as (select consignor_id, entity_id from core.dim_grower where code = any($1))
-      select count(*)::text n, string_agg(g.code, ',' order by g.code) codes
-      from core.dim_grower g
-      where g.is_grower is true and coalesce(g.is_test, false) = false
-        and (g.consignor_id in (select consignor_id from anchors)
-          or g.parent_entity_id in (select entity_id from anchors))`, [PILOT_ANCHORS]);
+    // 0063: activation is CURATED (the 2026 remittance book + 4 retained parents), so its
+    // membership is NOT derivable from hub data — pinning the list here is the hardcoded-baseline
+    // trap CLAUDE.md forbids, and it rotted the moment an admin used the 0059 RPC. Assert the
+    // INVARIANTS that must always hold and REPORT the membership.
     const f9 = await underCtx(c, staffTok, () =>
       q1<{ rows: string; nulls: string; enabled: string; enabled_codes: string | null }>(c, `
         select count(*)::text rows,
@@ -373,9 +368,22 @@ async function main(): Promise<void> {
                string_agg(farm_code, ',' order by farm_code) filter (where portal_enabled) enabled_codes
         from semantic.grower_directory`));
     check(`portal_enabled is never null (${f9.nulls} nulls over ${f9.rows} rows)`, Number(f9.nulls) === 0);
-    check(`enabled set == the seeded pilot groups (${f9.enabled} of ${f9.rows})`,
-      f9.enabled === f9expect.n && f9.enabled_codes === f9expect.codes,
-      `got [${f9.enabled_codes ?? ''}] expect [${f9expect.codes}]`);
+    log(`  enabled set (${f9.enabled} of ${f9.rows}, reported not asserted): ${f9.enabled_codes ?? ''}`);
+    // The directory's enabled count must agree with the activation store it reads.
+    const f9store = await q1<{ enabled: string }>(c, `
+      select count(*)::text enabled from core.portal_grower_activation a
+      join core.dim_grower g on g.consignor_id = a.consignor_id
+      where a.enabled and g.is_grower is true and coalesce(g.is_test, false) = false`);
+    check(`directory enabled (${f9.enabled}) == activation store enabled (${f9store.enabled})`,
+      f9.enabled === f9store.enabled);
+    // Nothing test or inactive may ever be portal-enabled (the invariant that actually matters).
+    const f9bad = await q1<{ bad: string; codes: string | null }>(c, `
+      select count(*)::text bad, string_agg(g.code, ',' order by g.code) codes
+      from core.portal_grower_activation a
+      join core.dim_grower g on g.consignor_id = a.consignor_id
+      where a.enabled and (coalesce(g.is_test, false) or not g.is_active or g.is_grower is not true)`);
+    check('no test / inactive / non-grower consignor is portal-enabled',
+      Number(f9bad.bad) === 0, `offenders [${f9bad.codes ?? ''}]`);
     // Default-false: no activation row must ever read as enabled.
     const f9default = await underCtx(c, staffTok, () =>
       q1<{ bad: string }>(c, `
