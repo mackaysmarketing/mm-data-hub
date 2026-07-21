@@ -1,3 +1,103 @@
+# Handoff (2026-07-22): grower classification override (0062) + two audits — DECISIONS PENDING
+
+Status: **✅ 0062 built, applied to prod, proofs green. Both audits complete and filed. Everything
+else HELD at Tim's instruction — do not build further without his call.** Push manual.
+
+## What landed — `0062_grower_classification_override`
+`core.dim_grower.is_grower` is a verbatim copy of a FreshTrack checkbox, and `refresh_dim_grower()`
+rebuilds it on every entity sync — so a manual `update` is reverted by the next
+`npm run load:entities`. Same lesson as `dim_gp_charge.revenue_class` / `portal_grower_activation`
+(0059): **curated state never lives on a rebuilt dim.**
+- `core.grower_classification_override` (consignor_id → dim_grower, is_grower, **mandatory reason**,
+  updated_at/by), applied inside `refresh_dim_grower()`. Internal-only posture, **no write policy
+  for any JWT role** (service_role/migration only; add an admin-gated definer per 0059 if the portal
+  ever needs to curate it).
+- `dim_grower.is_grower` stays the column every consumer reads and is now the **EFFECTIVE** value;
+  the untouched source is preserved as **`is_grower_source`**, so drift is visible and an override
+  is provably retirable once upstream is corrected. Never silently permanent.
+- Seeded: **AGSCU "Sculli - Agent" = false.** The only `AG*`-coded entity flagged true (the other
+  ten are false). **Cannot be fixed in FreshTrack** — clearing Grower? crashes the vendor app with
+  `'NoneType' object has no attribute 'is_grower'`: AGSCU carries a Farm association, FreshTrack
+  requires a Farm's contact-or-parent to be a supplier/grower, and the parent SCULL has **no
+  supplier record**. AGSCU is **1 of 105 farm entities in that shape** — nobody has hit the path
+  before. Its farm is vestigial (0 pallets, 0 gp_detail rows). Vendor bug; repro sent.
+- Effect: `grower_directory` 100 → 99. AGSCU has no activation row → no portal user affected.
+- Evidence: `rls:posture` **106/106** · `auth0:rls` **232/232** · `portal:verify` **41/42** ·
+  tests **139/139** · typecheck clean. (The 1 failure is the pre-existing F9 frozen-baseline issue
+  documented in the 0061 handoff below — still Tim's call.)
+
+## Two audits — `docs/audit-is-grower-classification.md`, `docs/audit-annrd-processing-purchased-stock.md`
+Multi-agent, every finding re-derived by an adversarial verifier re-running the SQL. **Read these
+before acting on anything below.** (is_grower audit: 4 of 13 agents died on connection errors,
+including the whole buyloads track — its Buy-load detail is thinner than the rest.)
+
+**Assumptions that did NOT survive:**
+- **`order_type='B'` is a LEG type, not commercial terms.** 62.8% of Buy loads are consigned by
+  `is_grower=true` entities vs 41.7% of Sell loads; **73% are consigned to a Mackays site**
+  (MMTRU 1,813 · MMANN 440 · MMLAR 317). B = fruit arriving at our own DC, and Buy loads settle
+  through the commission mechanism with a full deduction ledger.
+- **Ann Rd is RIPENING / cross-dock, not freezing.** $674,792 of `WH - Ripening - Ann Rd`; the one
+  frozen charge in the rate card has been **applied 0 times**. Freezing = MMPRO/MMLAR. The hub has
+  no site/address table, so whether MMPRO physically sits at Ann Rd is unanswerable here.
+  **⚠ Excluding Ann Rd would delete $12,035,467.12 of genuine grower settlement** across 12
+  portal-enabled growers — its loads are reconsignment ORIGINS; the $0-gross appearance is a grain
+  artefact.
+- **The agents are on the standard commission rate card** (median 4.39%, same as growers, retail
+  rebate passed through). No purchase-price or fixed-$/box line exists anywhere in GP charge data.
+- **`raw.ft_gp_detail.processing_id` is NOT a processing flag** — non-null on all 25,119 rows
+  including ordinary Coles/WOW fresh settlement, and joins to nothing landed (0 matches across 14
+  FreshTrack PKs). **The price ladder is dead too** (`price_paid_value` 1.5% populated; quoted ==
+  invoiced 99.86%).
+
+**What IS true:**
+- The processing/freezing stream is cleanly identifiable (7 products; MMPRO/MMLAR; 607 loads) and
+  has **ZERO GP settlement rows**. Nothing to exclude.
+- Purchased stock IS separable **on the NetSuite surface**: **82 commission-free, deduction-free,
+  single-line bills, $519,142.40**, item `910128`, vs 1,085 bills carrying commission at
+  3.000–4.566%. Perfect separation. **Caveat: all three vendors are Mackays' own farms
+  (MACBO/MACSD/MACGT), every line `INTERCOEXPENSE` — related-party, not arm's-length.** Sibling
+  item `910129` "Mackays Growers - 1kg" exists with 0 lines.
+- **13 `dim_grower` rows contradict their own FreshTrack tags** (AGSCU handled; 12 pending).
+  **No false negatives** — no `is_grower=false` entity outside the six agents has any settlement,
+  so tightening locks nobody out.
+
+## ⚠ SECURITY FINDING — surfaced, NOT yet fixed (Tim's call)
+**Portal activation gates nothing but a display column.** No RLS policy anywhere in
+`raw`/`core`/`semantic` references `is_grower`, `is_test`, `order_type`, or activation — every
+grower policy is `consignor_id = ANY(claimed set)`, and `auth0_consignor_ids()` never joins
+`dim_grower`. **The only gate is whoever edits the Auth0 claim.** Proven live: a minted MMTRU claim
+reads **$95,918,521.15** of load-sale revenue + 54,147 pallet rows; an AGDBM claim reads that
+agent's full $1.42m settlement. Secondary: `set_grower_portal_enabled` validates only that the uuid
+exists in `dim_grower`, so an admin can activate a Mackays DC or a `*TEST` consignor directly.
+**Nothing is mis-exposed today** — all 32 activated consignors are genuine, active, non-test growers.
+Proposed fix (NOT built): intersect the claimed set against a grower predicate inside
+`auth0_consignor_ids()` / `current_consignor_ids()` — one change covers all 7 relations, every view,
+Cube and the MCP.
+
+## Held at Tim's instruction (2026-07-22) — do not build without his say-so
+1. The claim-side grower gate (above).
+2. Flagging the 82 commission-free NetSuite bills as purchases in `core.fact_settlement_bill`.
+3. The 12 further classification overrides (QPIWA, SIMPS, COSAV, AVCOL, HAPVA, ROMEO, AVOCO, PINAT,
+   STAHM, MAJES, MG; AVOLU ambiguous — tagged Vendor but a NetSuite cat-110 grower with $134,880).
+4. Everything from the grower-portal NetSuite ask still unbuilt (see the 0061 handoff).
+5. The F9 frozen-baseline fix in `portal:verify`.
+
+## Open business questions blocking the above
+Is the freezing at Ann Rd or is MMPRO elsewhere? · Are the 82 MACKF bills genuinely agreed-rate
+purchases or just a processing-grade product line on a normal RCTI? · Do we buy processing-grade
+fruit from third parties (item 910129 unused)? · Should the ~$1.2m of Buy-origin settlement on
+LMBEP/LMBCO/LMBBF (all portal-enabled) be visible to those growers? · Should retailers appearing as
+consignors (Coles/WOW Townsville returns) be scrubbed from the grower dimension?
+
+## Also worth landing when someone picks this up
+`raw.ft_entity` last synced **2026-07-11** — any FreshTrack reclassification since is invisible.
+Re-run `npm run load:entities` (then `core.refresh_dim_grower()`) once AGSCU is fixed at source,
+with loaders quiescent. And the NetSuite bill-line loader lands **no `quantity`/`rate`** and no
+`item.parent` — adding them is what would let rate-per-kg be tested against commission-discovered
+price, the one test that could actually settle the purchase-vs-commission question.
+
+---
+
 # Handoff (2026-07-21b): archived-pallet load fix + settlement origin lineage (0061)
 
 Status: **✅ built, applied to prod, proofs green.** Push manual. Input: grower-portal ask
