@@ -34,10 +34,13 @@
 //   S5  grower_directory: staff == owner-derived grower list (non-test, is_grower); grower,
 //       mm-hub-internal (deliberate), and no-claim tokens all → 0 rows.
 //   S6  ADMIN tier (0059): auth0_is_admin() is strict/issuer-pinned/fail-closed; the
-//       SECURITY DEFINER write RPC semantic.set_grower_portal_enabled() REFUSES growers,
-//       staff-who-are-not-admin, no-claim, and off-issuer callers (42501), accepts admin, is
-//       atomic on unknown ids (23503) and validates its args; and the admin claim widens NO
-//       data surface (admin-without-staff still reads 0 directory rows, 0 internal rows).
+//       SECURITY DEFINER RPC semantic.set_grower_portal_enabled() REFUSES growers,
+//       staff-who-are-not-admin, no-claim, and off-issuer callers (42501); and the admin claim
+//       widens NO data surface (admin-without-staff still reads 0 directory rows, 0 internal rows).
+//       0064: the RPC is RETIRED — an ADMIN caller now gets 0A000 (feature_not_supported) and it
+//       writes nothing; activation is curated in src/config/portal_activation.ts and applied by
+//       `npm run portal:activate`. AUTHORIZATION IS STILL CHECKED FIRST, so an unauthorized caller
+//       gets 42501 and never learns the endpoint's state.
 //       Every RPC call runs inside a transaction that ROLLS BACK — the proof stays read-only.
 //
 // Tenant-migration sections (0057 — the mackaysmarketing tenant beside grower-portal, each
@@ -538,20 +541,31 @@ async function main(): Promise<void> {
       (await rpcSet(c, JSON.stringify({ iss: SUPA_ISS, role: 'authenticated', [ROLE2]: 'admin' }), [target], false)) === REFUSED);
     check('OLD-issuer token carrying new-namespace hub_role=admin → RPC refused',
       (await rpcSet(c, JSON.stringify({ iss: AUTH0_ISS, role: 'authenticated', [ROLE2]: 'admin' }), [target], false)) === REFUSED);
-    check('ADMIN token → RPC accepted', (await rpcSet(c, adminTok('admin'), [target], false)) === 'ok');
-    check('hub_admin token → RPC accepted', (await rpcSet(c, adminTok('hub_admin'), [target], true)) === 'ok');
+    // 0064 — the RPC is RETIRED (Tim's "friendly break"): activation is curated in
+    // src/config/portal_activation.ts and applied by `npm run portal:activate`. The signature is
+    // kept so grower-portal's call still resolves, but an authorized caller now gets a specific,
+    // actionable refusal instead of a silent toggle the next apply would revert.
+    const RETIRED = '0A000';   // feature_not_supported → PostgREST 501
+    check('ADMIN token → RPC RETIRED (0A000, no longer writes)',
+      (await rpcSet(c, adminTok('admin'), [target], false)) === RETIRED);
+    check('hub_admin token → RPC RETIRED (0A000)',
+      (await rpcSet(c, adminTok('hub_admin'), [target], true)) === RETIRED);
 
-    // Argument handling: loud on unknown ids, explicit on null, no-op on empty.
-    check('admin + UNKNOWN consignor_id → 23503 (surfaced, whole call atomic)',
-      (await rpcSet(c, adminTok(), [target, ghost], true)) === '23503');
-    check('admin + null p_enabled → 22004 (never silently coerced)',
-      (await rpcSet(c, adminTok(), [target], null)) === '22004');
-    check('admin + empty array → no-op, not an error', (await rpcSet(c, adminTok(), [], true)) === 'ok');
-    // A refused caller must not even reach argument validation (authorization is checked FIRST).
-    check('staff + null p_enabled → still 42501 (authz precedes validation)',
+    // Retirement is unconditional on the arguments — there is nothing left to validate.
+    check('admin + UNKNOWN consignor_id → still RETIRED (not 23503)',
+      (await rpcSet(c, adminTok(), [target, ghost], true)) === RETIRED);
+    check('admin + null p_enabled → still RETIRED (not 22004)',
+      (await rpcSet(c, adminTok(), [target], null)) === RETIRED);
+    check('admin + empty array → still RETIRED (no silent no-op success)',
+      (await rpcSet(c, adminTok(), [], true)) === RETIRED);
+    // AUTHORIZATION STILL COMES FIRST: an unauthorized caller must learn NOTHING about the
+    // endpoint's state — they get 42501, never the retirement notice.
+    check('staff + null p_enabled → still 42501 (authz precedes everything)',
       (await rpcSet(c, staffTok2(), [target], null)) === REFUSED);
+    check('a refused caller never sees the retirement code (42501 ≠ 0A000)',
+      (await rpcSet(c, staffTok2(), [target], false)) === REFUSED);
 
-    // Round trip: an admin toggle is visible to a staff read, in the same transaction, then rolled back.
+    // The retired path must leave state untouched: an admin toggle attempt changes nothing.
     const trip = await (async () => {
       await c.query('begin');
       try {
@@ -564,19 +578,25 @@ async function main(): Promise<void> {
         await c.query("select set_config('request.jwt.claims', $1, true)", [staffTok2()]);
         const before = await readEnabled();
         await c.query("select set_config('request.jwt.claims', $1, true)", [adminTok()]);
-        await c.query('select semantic.set_grower_portal_enabled($1::uuid[], $2::boolean)', [[target], false]);
-        await c.query("select set_config('request.jwt.claims', $1, true)", [staffTok2()]);
-        const after = await readEnabled();
-        const audit = (await c.query<{ updated_by: string | null }>(
-          `select updated_by from core.portal_grower_activation where consignor_id = $1`, [target])).rows[0];
-        return { before, after, audit: audit?.updated_by ?? null };
+        let code = 'ok';
+        try {
+          await c.query('select semantic.set_grower_portal_enabled($1::uuid[], $2::boolean)', [[target], false]);
+        } catch (e) {
+          code = (e as { code?: string }).code ?? 'ERR';   // txn is now aborted; the finally rolls it back
+        }
+        return { before, code };
       } finally {
         await c.query('rollback');
       }
     })();
-    check(`admin toggle is visible to a staff read (before=${trip.before} → after=${trip.after})`,
-      trip.before === true && trip.after === false);
-    check('the toggle records the admin JWT sub as updated_by', trip.audit === 'auth0|proof-admin', `got ${trip.audit}`);
+    check(`admin toggle attempt is refused (${trip.code}) and the row was enabled beforehand (${trip.before})`,
+      trip.code === RETIRED && trip.before === true);
+    // …and nothing was written: the row is untouched OUTSIDE the rolled-back transaction.
+    const stillEnabled = (await c.query<{ enabled: boolean; updated_by: string | null }>(
+      `select enabled, updated_by from core.portal_grower_activation where consignor_id = $1`, [target])).rows[0];
+    check('the retired RPC wrote nothing — row still enabled, provenance still the hub',
+      stillEnabled?.enabled === true && stillEnabled?.updated_by === 'mm-data-hub/portal_activation.ts',
+      `enabled=${stillEnabled?.enabled} updated_by=${stillEnabled?.updated_by}`);
 
     // The admin claim must widen NO data surface — it is a write gate, not a read grant.
     const adminOnly = JSON.stringify({ iss: NEW_ISS, role: 'authenticated', [ROLE2]: 'admin' }); // admin, NOT staff

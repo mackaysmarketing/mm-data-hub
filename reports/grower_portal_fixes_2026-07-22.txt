@@ -1,0 +1,71 @@
+fixtures: LRCLA=019439a6-fb95-f543-c2e0-40d9f9b719fa LRCTU=019439a8-7d01-187c-89ff-970d71bdba6c
+
+=== F1  grower_gp_settlement.date_from/date_to (derived from week_no) ===
+  PASS  null-date rows (5) == underivable source rows (5)
+  PASS  every derived row aligns to week_no (misaligned=0)
+  PASS  every derived date_from is a Monday (violations=0)
+  PASS  derivation is near-total (1327/1332)
+  PASS  test pair via grower token: 104 schedules, 0 null dates — nulls=0
+
+=== F2  product labels cleaned (shipped + detail) ===
+  PASS  semantic.grower_dispatch_shipped: 0 coded / 0 empty-string / 0 leading-[N] — coded=0 empty=0 leading=0 null=484
+  PASS  semantic.grower_dispatch_detail: 0 coded / 0 empty-string / 0 leading-[N] — coded=0 empty=0 leading=0 null=53
+  PASS  null products (484) == pallets with no product/variety/crop (484) — surfaced, not invented
+  PASS  test pair via grower token: portal acceptance query == 0 — bad=0
+
+=== F4  grower_dispatch_load (load grain) ===
+  PASS  view rows (19205) == distinct shipped (grower, load) pallet groups (19205)
+  PASS  is_archived (4628) == loads with zero live pallets (4628)
+  PASS  Σboxes on live loads ties exactly (8884915) — pallet grain 8884915
+  PASS  Σnet_weight on live loads ties exactly (99919539.400000) — pallet grain 99919539.400000
+  PASS  Σboxes on archived loads ties to their own pallets (2436336) — pallet grain 2436336
+  PASS  pre-0061 loads all survive (lost=0) and are byte-identical (changed=0); 4628 archived loads recovered
+  PASS  test pair via grower token sees ONLY its rows (258, portal expects ~238)
+  PASS  no-claim token → 0 rows (fail closed) — got 0
+
+=== F5  retailer identity on grower-readable sales ===
+  PASS  fact rows (12940) == derived (load, consignee) groups (12940)
+  invoice accounting: 13255 load-linked invoices = 12940 grain rows + 141 whose loads predate the dispatch landing (surfaced, not silently dropped)
+  PASS  retailer_group parity vs crosswalk recomputed in-run (mismatched=0)
+  unmapped retailer_group rows: 0 (surfaced)
+  PASS  test pair via grower token: every sold load carries retailer_group (240 loads) — woolworths=240
+  PASS  pair retailer mix is woolworths-dominant (doc: "- WOW" hints) — woolworths=240
+
+=== F6  consignment_status (Tim's four states) ===
+  distribution: Consigned=940 Not Consigned=443 Sold=3711 Paid=14111
+  PASS  every load carries exactly one of the four values
+  PASS  every status is signal-consistent (re-derived from the exposed columns) — paid=0 sold=0 consigned=0 not=0
+  test pair distribution: Consigned=8 Paid=231 Sold=19
+
+=== F7  drill-down: schedule 1329 via grower token ===
+  PASS  schedule 1329 loads visible via grower token (2)
+  PASS  each load shows retailer + per-category deductions — G5021851 - 416: woolworths gross=31651.20 | G5021853 - 439: woolworths gross=49737.60
+
+=== RLS  new views fail closed; grower_load_sale isolation ===
+  PASS  grower_load_sale: no-claim → 0 — got 0
+  PASS  grower_load_sale: pair token sees only its rows — rows=240
+
+=== F8  grower_directory v2: parent hierarchy columns ===
+  PASS  dim parent columns match raw.ft_entity recomputation (drift=0)
+  PASS  staff token: directory rows (99) == owner-derived (99); entity_id total — parent coverage 38/99 (report, not asserted)
+  PASS  test pair shares one non-null parent (L & R Collins)
+  PASS  MACKF ("Mac Farms") members via staff token (5) == raw-derived (5)
+  PASS  grower (pair) token → 0 directory rows — got 0
+
+=== F9  grower_directory v3: portal_enabled (admin-curated activation) ===
+  PASS  portal_enabled is never null (0 nulls over 99 rows)
+  enabled set (29 of 99, reported not asserted): ALCOC,DANDY,GJFLE,GJFMF,JUSTE,LAUGO,LMBCO,LMBEP,LMBFA,LRCLA,LRCOL,LRCTU,MACBO,MACGT,MACKF,MACRR,MACSD,NOUBC,NOUPA,OBIFW,PRIMO,ROCKR,ROLFE,SANGH,SERAV,SERRA,SLOWE,WADDA,ZONTA
+  PASS  directory enabled (29) == activation store enabled (29)
+  PASS  no test / inactive / non-grower consignor is portal-enabled — offenders []
+  PASS  every enabled row is backed by an activation row (default-false holds) — unbacked=0
+  PASS  staff (non-admin) token cannot toggle activation — RPC refuses 42501 — got 42501
+
+=== F10  settlement origin lineage (0061) ===
+  PASS  origin resolved for every unambiguous line — origin_load_no never missing (0)
+  PASS  every line lands in a named bucket: 16841 visible + 1158 pooled (>1 origin) + 1043 Buy-order + 0 unexplained == 19042
+  PASS  the 0061 archived fix recovers origin loads the old view hid (860)
+  PASS  origin_load_no re-derives from raw.ft_dispatch_load (drift=0); 10147 lines carry an origin ≠ the sale load
+  PASS  test pair via grower token sees origin_load_no on its settlement lines (244 of 244)
+  PASS  grower_gp_settlement_load: no-claim token → 0 rows (fail closed) — got 0
+
+=== 43/43 checks passed ===

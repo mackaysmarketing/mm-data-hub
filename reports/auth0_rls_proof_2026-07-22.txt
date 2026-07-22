@@ -1,0 +1,278 @@
+=== B0  fixtures + expected counts derived in-run (no hardcoded baselines) ===
+  A=0191e986-7505-5cf2-cd56-da653beef666 B=0191e987-6e56-c426-5729-372baee10c69 C=0191f981-c9dc-4203-4f1b-3e9c5f5758d3
+  raw.ft_dispatch_load: internal=23137 A=1830 B=1493 C=5169
+  raw.ft_pallet: internal=210436 A=21501 B=10154 C=57480
+  core.dim_grower: internal=156 A=1 B=1 C=1
+  core.fact_settlement_bill: internal=1167 A=107 B=82 C=0
+  core.fact_gp_settlement: internal=1332 A=53 B=52 C=0
+  core.fact_gp_settlement_load: internal=19042 A=4935 B=1798 C=0
+  core.fact_load_sale: internal=12940 A=743 B=1092 C=2732
+  PASS  fixtures non-trivial on raw.ft_dispatch_load (A=1830, B=1493)
+  PASS  fixtures non-trivial on raw.ft_pallet (A=21501, B=10154)
+  PASS  fixtures non-trivial on core.dim_grower (A=1, B=1)
+  PASS  fixtures non-trivial on core.fact_settlement_bill (A=107, B=82)
+  PASS  fixtures non-trivial on core.fact_gp_settlement (A=53, B=52)
+  PASS  fixtures non-trivial on core.fact_gp_settlement_load (A=4935, B=1798)
+  PASS  fixtures non-trivial on core.fact_load_sale (A=743, B=1092)
+  PASS  internal fixture non-trivial: core.fact_customer_invoice owner count > 0 — got 13275
+  PASS  internal fixture non-trivial: semantic.order_headers owner count > 0 — got 21590
+
+=== B1  semantic.auth0_consignor_ids() — issuer-pinned, array-only, fail-closed ===
+  PASS  auth0 [A,B] → {A,B}
+  PASS  duplicates de-duplicated
+  PASS  malformed element skipped → {B}
+  PASS  empty array → empty set
+  PASS  claim not an array (string) → empty
+  PASS  WRONG issuer → empty
+  PASS  Supabase issuer → empty
+  PASS  MISSING issuer → empty
+  PASS  issuer without trailing slash → empty
+  PASS  no claims at all → empty
+  PASS  malformed claims JSON → empty, never errors
+  PASS  app_metadata-only token → auth0 helper empty
+
+=== B2  policy shapes (additive; mm-hub set untouched) ===
+  PASS  exactly 7 auth0_grower_own_* policies (0026 six + 0054 fact_load_sale) — 7 found
+  PASS  auth0 policies cover exactly the grower-scoped relation set
+  PASS  mm-hub grower_own_* policies are exactly the pinned seven (table|name pairs) — core.dim_grower|grower_own_dim core.fact_gp_settlement_load|grower_own_gp_settlement_load core.fact_gp_settlement|grower_own_gp_settlement core.fact_load_sale|grower_own_load_sale core.fact_settlement_bill|grower_own_settlement raw.ft_dispatch_load|grower_own_loads raw.ft_pallet|grower_own_pallets
+  PASS  auth0_grower_own_dim: quals auth0_consignor_ids(), no internal branch, to authenticated — (consignor_id = ANY (semantic.auth0_consignor_ids()))
+  PASS  auth0_grower_own_gp_settlement: quals auth0_consignor_ids(), no internal branch, to authenticated — (consignor_id = ANY (semantic.auth0_consignor_ids()))
+  PASS  auth0_grower_own_gp_settlement_load: quals auth0_consignor_ids(), no internal branch, to authenticated — (consignor_id = ANY (semantic.auth0_consignor_ids()))
+  PASS  auth0_grower_own_load_sale: quals auth0_consignor_ids(), no internal branch, to authenticated — (consignor_id = ANY (semantic.auth0_consignor_ids()))
+  PASS  auth0_grower_own_settlement: quals auth0_consignor_ids(), no internal branch, to authenticated — (consignor_id = ANY (semantic.auth0_consignor_ids()))
+  PASS  auth0_grower_own_loads: quals auth0_consignor_ids(), no internal branch, to authenticated — (consignor_id = ANY (semantic.auth0_consignor_ids()))
+  PASS  auth0_grower_own_pallets: quals auth0_consignor_ids(), no internal branch, to authenticated — (dispatch_load_id IN ( SELECT ft_dispatch_load.id FROM raw.ft_dispatch_load WHERE (ft_dispatch_load.consignor_id = ANY (semantic.auth0_consignor_ids()))))
+  PASS  the 7 mm-hub grower_own_* policies remain live and unchanged in shape
+
+=== B3  Auth0 [A] token == owner-derived counts; B/C = 0 ===
+  PASS  raw.ft_dispatch_load: A=1830 B=0 C=0 total=1830 — (expect A=1830 B=0 C=0 total=1830)
+  PASS  raw.ft_pallet: A=21501 B=0 C=0 total=21501 — (expect A=21501 B=0 C=0 total=21501)
+  PASS  core.dim_grower: A=1 B=0 C=0 total=1 — (expect A=1 B=0 C=0 total=1)
+  PASS  core.fact_settlement_bill: A=107 B=0 C=0 total=107 — (expect A=107 B=0 C=0 total=107)
+  PASS  core.fact_gp_settlement: A=53 B=0 C=0 total=53 — (expect A=53 B=0 C=0 total=53)
+  PASS  core.fact_gp_settlement_load: A=4935 B=0 C=0 total=4935 — (expect A=4935 B=0 C=0 total=4935)
+  PASS  core.fact_load_sale: A=743 B=0 C=0 total=743 — (expect A=743 B=0 C=0 total=743)
+
+=== B4  Auth0 [A,B] token == A+B rows only ===
+  PASS  raw.ft_dispatch_load: A=1830 B=1493 C=0 total=3323 — (expect A=1830 B=1493 C=0 total=3323)
+  PASS  raw.ft_pallet: A=21501 B=10154 C=0 total=31655 — (expect A=21501 B=10154 C=0 total=31655)
+  PASS  core.dim_grower: A=1 B=1 C=0 total=2 — (expect A=1 B=1 C=0 total=2)
+  PASS  core.fact_settlement_bill: A=107 B=82 C=0 total=189 — (expect A=107 B=82 C=0 total=189)
+  PASS  core.fact_gp_settlement: A=53 B=52 C=0 total=105 — (expect A=53 B=52 C=0 total=105)
+  PASS  core.fact_gp_settlement_load: A=4935 B=1798 C=0 total=6733 — (expect A=4935 B=1798 C=0 total=6733)
+  PASS  core.fact_load_sale: A=743 B=1092 C=0 total=1835 — (expect A=743 B=1092 C=0 total=1835)
+
+=== B5  forgery: the namespaced claim is inert off-issuer ===
+  PASS  raw.ft_dispatch_load: wrong-iss=0 supabase-iss=0 — wrong=0 supa=0
+  PASS  raw.ft_pallet: wrong-iss=0 supabase-iss=0 — wrong=0 supa=0
+  PASS  core.dim_grower: wrong-iss=0 supabase-iss=0 — wrong=0 supa=0
+  PASS  core.fact_settlement_bill: wrong-iss=0 supabase-iss=0 — wrong=0 supa=0
+  PASS  core.fact_gp_settlement: wrong-iss=0 supabase-iss=0 — wrong=0 supa=0
+  PASS  core.fact_gp_settlement_load: wrong-iss=0 supabase-iss=0 — wrong=0 supa=0
+  PASS  core.fact_load_sale: wrong-iss=0 supabase-iss=0 — wrong=0 supa=0
+  PASS  raw.ft_dispatch_load: mm-hub token + namespaced [B] claim gains NOTHING (A=1830 B=0)
+  PASS  raw.ft_pallet: mm-hub token + namespaced [B] claim gains NOTHING (A=21501 B=0)
+  PASS  core.dim_grower: mm-hub token + namespaced [B] claim gains NOTHING (A=1 B=0)
+  PASS  core.fact_settlement_bill: mm-hub token + namespaced [B] claim gains NOTHING (A=107 B=0)
+  PASS  core.fact_gp_settlement: mm-hub token + namespaced [B] claim gains NOTHING (A=53 B=0)
+  PASS  core.fact_gp_settlement_load: mm-hub token + namespaced [B] claim gains NOTHING (A=4935 B=0)
+  PASS  core.fact_load_sale: mm-hub token + namespaced [B] claim gains NOTHING (A=743 B=0)
+
+=== B6  trust partition: Auth0-issued app_metadata is refused (0050 guards) ===
+  PASS  is_internal_claim() = false on an Auth0-issued token
+  PASS  current_consignor_ids() = {} on an Auth0-issued token
+  PASS  raw.ft_dispatch_load: hostile hybrid sees A only (A=1830 B=0 C=0)
+  PASS  raw.ft_pallet: hostile hybrid sees A only (A=21501 B=0 C=0)
+  PASS  core.dim_grower: hostile hybrid sees A only (A=1 B=0 C=0)
+  PASS  core.fact_settlement_bill: hostile hybrid sees A only (A=107 B=0 C=0)
+  PASS  core.fact_gp_settlement: hostile hybrid sees A only (A=53 B=0 C=0)
+  PASS  core.fact_gp_settlement_load: hostile hybrid sees A only (A=4935 B=0 C=0)
+  PASS  core.fact_load_sale: hostile hybrid sees A only (A=743 B=0 C=0)
+  PASS  internal-only core.fact_customer_invoice = 0 under the hostile token (owner has 13275) — got 0
+  PASS  internal-gated semantic.order_headers = 0 under the hostile token (owner has 21590) — got 0
+  PASS  etl-only raw.ft_gp_schedule stays permission-denied
+  PASS  ungranted semantic.retail_prices stays permission-denied
+
+=== B7  mm-hub path untouched (no-iss + supabase-iss app_metadata tokens) ===
+  PASS  raw.ft_dispatch_load: no-iss=1830 supa-iss=1830 internal=23137 no-claim=0 — (expect A=1830 internal=23137 no-claim=0)
+  PASS  raw.ft_pallet: no-iss=21501 supa-iss=21501 internal=210436 no-claim=0 — (expect A=21501 internal=210436 no-claim=0)
+  PASS  core.dim_grower: no-iss=1 supa-iss=1 internal=156 no-claim=0 — (expect A=1 internal=156 no-claim=0)
+  PASS  core.fact_settlement_bill: no-iss=107 supa-iss=107 internal=1167 no-claim=0 — (expect A=107 internal=1167 no-claim=0)
+  PASS  core.fact_gp_settlement: no-iss=53 supa-iss=53 internal=1332 no-claim=0 — (expect A=53 internal=1332 no-claim=0)
+  PASS  core.fact_gp_settlement_load: no-iss=4935 supa-iss=4935 internal=19042 no-claim=0 — (expect A=4935 internal=19042 no-claim=0)
+  PASS  core.fact_load_sale: no-iss=743 supa-iss=743 internal=12940 no-claim=0 — (expect A=743 internal=12940 no-claim=0)
+  PASS  internal via supabase iss still true
+  PASS  internal via no-iss claims (Cube/MCP shape) still true
+  PASS  legacy scalar consignor_id token still scopes exactly — got 1830, expect 1830
+
+=== B8  grower views: Auth0 [A,B] == mm-hub app_metadata [A,B] (identical counts) ===
+  PASS  semantic.grower_dispatch_detail: auth0=4290 hub=4290
+  PASS  semantic.grower_dispatch_shipped: auth0=31315 hub=31315
+  PASS  semantic.grower_dispatch_load: auth0=3274 hub=3274
+  PASS  semantic.grower_load_sale: auth0=1835 hub=1835
+  PASS  semantic.grower_settlement: auth0=189 hub=189
+  PASS  semantic.grower_gp_settlement: auth0=105 hub=105
+  PASS  semantic.grower_gp_settlement_load: auth0=6733 hub=6733
+  PASS  view parity is non-trivial (rows > 0 across the grower views) — sum=47741
+
+=== S1  semantic.auth0_is_staff() — strict boolean-true, issuer-pinned (0056) ===
+  PASS  staff=true on the Auth0 issuer → true
+  PASS  staff="true" (string) → false
+  PASS  staff=1 (number) → false
+  PASS  staff=false → false
+  PASS  staff=[true] (array) → false
+  PASS  claim absent → false
+  PASS  WRONG issuer → false
+  PASS  Supabase issuer → false
+  PASS  MISSING issuer → false
+  PASS  issuer without trailing slash → false
+  PASS  app_metadata.mm_staff (un-namespaced source form) → false
+  PASS  mm-hub internal token → false (staff is Auth0-issuer-only)
+  PASS  no claims at all → false
+  PASS  malformed claims JSON → false, never errors
+
+=== S2  policy shapes: exactly 7 auth0_staff_read_* (0056), quals the helper ALONE ===
+  PASS  exactly 7 auth0_staff_read_* policies — 7 found
+  PASS  staff policies cover exactly the grower-scoped relation set
+  PASS  auth0_staff_read_dim: qual is exactly semantic.auth0_is_staff(), to authenticated — semantic.auth0_is_staff()
+  PASS  auth0_staff_read_gp_settlement: qual is exactly semantic.auth0_is_staff(), to authenticated — semantic.auth0_is_staff()
+  PASS  auth0_staff_read_gp_settlement_load: qual is exactly semantic.auth0_is_staff(), to authenticated — semantic.auth0_is_staff()
+  PASS  auth0_staff_read_load_sale: qual is exactly semantic.auth0_is_staff(), to authenticated — semantic.auth0_is_staff()
+  PASS  auth0_staff_read_settlement: qual is exactly semantic.auth0_is_staff(), to authenticated — semantic.auth0_is_staff()
+  PASS  auth0_staff_read_loads: qual is exactly semantic.auth0_is_staff(), to authenticated — semantic.auth0_is_staff()
+  PASS  auth0_staff_read_pallets: qual is exactly semantic.auth0_is_staff(), to authenticated — semantic.auth0_is_staff()
+
+=== S3  staff token == owner-derived totals on all 7 relations + view parity ===
+  PASS  raw.ft_dispatch_load: staff=23137 — (expect 23137)
+  PASS  raw.ft_pallet: staff=210436 — (expect 210436)
+  PASS  core.dim_grower: staff=156 — (expect 156)
+  PASS  core.fact_settlement_bill: staff=1167 — (expect 1167)
+  PASS  core.fact_gp_settlement: staff=1332 — (expect 1332)
+  PASS  core.fact_gp_settlement_load: staff=19042 — (expect 19042)
+  PASS  core.fact_load_sale: staff=12940 — (expect 12940)
+  PASS  semantic.grower_dispatch_detail: staff=48073 == mm-hub internal=48073
+  PASS  semantic.grower_dispatch_shipped: staff=179822 == mm-hub internal=179822
+  PASS  semantic.grower_dispatch_load: staff=19205 == mm-hub internal=19205
+  PASS  semantic.grower_load_sale: staff=12917 == mm-hub internal=12917
+  PASS  semantic.grower_settlement: staff=1167 == mm-hub internal=1167
+  PASS  semantic.grower_gp_settlement: staff=1332 == mm-hub internal=1332
+  PASS  semantic.grower_gp_settlement_load: staff=19042 == mm-hub internal=19042
+  PASS  staff + grower [A] hybrid token still reads ALL loads (policies OR) — got 23137
+
+=== S4  staff ≠ internal: internal-only stays closed under a staff token ===
+  PASS  internal-only core.fact_customer_invoice = 0 under staff (owner has 13275) — got 0
+  PASS  internal-gated semantic.order_headers = 0 under staff (owner has 21590) — got 0
+  PASS  is_internal_claim() = false under a staff token
+  PASS  etl-only raw.ft_gp_schedule stays permission-denied under staff
+  PASS  ungranted semantic.retail_prices stays permission-denied under staff
+
+=== S5  semantic.grower_directory: staff-only (explicit gate) ===
+  PASS  directory owner-derived expectation is non-trivial — 99 growers
+  PASS  staff token sees the full directory (99) — (expect 99)
+  PASS  grower [A] token → 0 directory rows (no enumeration) — got 0
+  PASS  mm-hub internal token → 0 directory rows (gate is staff-claim-only, deliberate) — got 0
+  PASS  no-claim token → 0 directory rows — got 0
+  PASS  Supabase-iss token carrying the staff claim → 0 directory rows — got 0
+
+=== S6  semantic.auth0_is_admin() + the admin-gated write RPC (0059) ===
+  PASS  hub_role="admin" on the Auth0 issuer → true
+  PASS  hub_role="hub_admin" → true
+  PASS  hub_role="staff" → false (staff is NOT admin — the whole point of the tier)
+  PASS  hub_role="grower_admin" → false
+  PASS  hub_role="ADMIN" (case) → false
+  PASS  hub_role=" admin " (whitespace) → false
+  PASS  hub_role=["admin"] (array) → false
+  PASS  hub_role=true (boolean) → false
+  PASS  hub_role absent → false
+  PASS  CROSS: old-namespace hub_role under NEW issuer → false
+  PASS  CROSS: new-namespace hub_role under OLD issuer → false
+  PASS  hub_role under the Supabase issuer → false
+  PASS  hub_role with NO issuer (Cube/MCP shape) → false
+  PASS  hub_role smuggled in app_metadata → false
+  PASS  mm-hub internal token → false (admin is an Auth0-issuer claim only)
+  PASS  no claims at all → false
+  PASS  malformed claims JSON → false, never errors
+  PASS  activation fixture: at least one enabled consignor exists (0059 seed)
+  PASS  grower token → RPC refused
+  PASS  STAFF (not admin) token → RPC refused — an MM User cannot toggle visibility
+  PASS  hub_role=staff token → RPC refused
+  PASS  no-claim token → RPC refused
+  PASS  mm-hub internal token → RPC refused (internal ≠ portal admin)
+  PASS  Supabase-issuer token carrying hub_role=admin → RPC refused
+  PASS  OLD-issuer token carrying new-namespace hub_role=admin → RPC refused
+  PASS  ADMIN token → RPC RETIRED (0A000, no longer writes)
+  PASS  hub_admin token → RPC RETIRED (0A000)
+  PASS  admin + UNKNOWN consignor_id → still RETIRED (not 23503)
+  PASS  admin + null p_enabled → still RETIRED (not 22004)
+  PASS  admin + empty array → still RETIRED (no silent no-op success)
+  PASS  staff + null p_enabled → still 42501 (authz precedes everything)
+  PASS  a refused caller never sees the retirement code (42501 ≠ 0A000)
+  PASS  admin toggle attempt is refused (0A000) and the row was enabled beforehand (true)
+  PASS  the retired RPC wrote nothing — row still enabled, provenance still the hub — enabled=true updated_by=mm-data-hub/portal_activation.ts
+  PASS  admin-WITHOUT-staff → 0 directory rows (admin is not a read grant)
+  PASS  raw.ft_dispatch_load: admin-without-staff sees 0 rows — got 0
+  PASS  raw.ft_pallet: admin-without-staff sees 0 rows — got 0
+  PASS  core.dim_grower: admin-without-staff sees 0 rows — got 0
+  PASS  core.fact_settlement_bill: admin-without-staff sees 0 rows — got 0
+  PASS  core.fact_gp_settlement: admin-without-staff sees 0 rows — got 0
+  PASS  core.fact_gp_settlement_load: admin-without-staff sees 0 rows — got 0
+  PASS  core.fact_load_sale: admin-without-staff sees 0 rows — got 0
+  PASS  admin token: internal-only core.fact_customer_invoice still 0
+  PASS  admin token: staff row scope unchanged (dispatch loads == owner total)
+  PASS  grower token → 0 rows on core.portal_grower_activation
+
+=== T1  mackaysmarketing tenant: helpers honor ONLY the own-namespace claims ===
+  PASS  new-iss [A,B] → {A,B}
+  PASS  new-iss duplicates de-duplicated
+  PASS  new-iss malformed element skipped → {B}
+  PASS  new-iss claim not an array → empty
+  PASS  new-iss issuer without trailing slash → empty
+  PASS  CROSS: old-namespace claim under NEW issuer → empty
+  PASS  CROSS: new-namespace claim under OLD issuer → empty
+  PASS  new-namespace claim under WRONG issuer → empty
+  PASS  new-namespace claim under Supabase issuer → empty
+  PASS  new-iss staff=true → true
+  PASS  new-iss staff="true" (string) → false
+  PASS  CROSS: old-namespace staff under NEW issuer → false
+  PASS  CROSS: new-namespace staff under OLD issuer → false
+  PASS  new-namespace staff under Supabase issuer → false
+
+=== T2  new-issuer app_metadata is refused (0057 guard extension) ===
+  PASS  is_internal_claim() = false on a new-tenant token
+  PASS  current_consignor_ids() = {} on a new-tenant token
+  PASS  raw.ft_dispatch_load: new-iss hostile hybrid sees A only (A=1830 B=0 C=0)
+  PASS  raw.ft_pallet: new-iss hostile hybrid sees A only (A=21501 B=0 C=0)
+  PASS  core.dim_grower: new-iss hostile hybrid sees A only (A=1 B=0 C=0)
+  PASS  core.fact_settlement_bill: new-iss hostile hybrid sees A only (A=107 B=0 C=0)
+  PASS  core.fact_gp_settlement: new-iss hostile hybrid sees A only (A=53 B=0 C=0)
+  PASS  core.fact_gp_settlement_load: new-iss hostile hybrid sees A only (A=4935 B=0 C=0)
+  PASS  core.fact_load_sale: new-iss hostile hybrid sees A only (A=743 B=0 C=0)
+  PASS  internal-only core.fact_customer_invoice = 0 under the new-iss hostile token (owner has 13275) — got 0
+
+=== T3  new-issuer parity: grower [A] scoped; staff == all rows; directory staff-only ===
+  PASS  raw.ft_dispatch_load: new-iss [A] A=1830 B=0 C=0 total=1830 — (expect A=1830 B=0 C=0 total=1830)
+  PASS  raw.ft_dispatch_load: new-iss staff=23137 — (expect 23137)
+  PASS  raw.ft_pallet: new-iss [A] A=21501 B=0 C=0 total=21501 — (expect A=21501 B=0 C=0 total=21501)
+  PASS  raw.ft_pallet: new-iss staff=210436 — (expect 210436)
+  PASS  core.dim_grower: new-iss [A] A=1 B=0 C=0 total=1 — (expect A=1 B=0 C=0 total=1)
+  PASS  core.dim_grower: new-iss staff=156 — (expect 156)
+  PASS  core.fact_settlement_bill: new-iss [A] A=107 B=0 C=0 total=107 — (expect A=107 B=0 C=0 total=107)
+  PASS  core.fact_settlement_bill: new-iss staff=1167 — (expect 1167)
+  PASS  core.fact_gp_settlement: new-iss [A] A=53 B=0 C=0 total=53 — (expect A=53 B=0 C=0 total=53)
+  PASS  core.fact_gp_settlement: new-iss staff=1332 — (expect 1332)
+  PASS  core.fact_gp_settlement_load: new-iss [A] A=4935 B=0 C=0 total=4935 — (expect A=4935 B=0 C=0 total=4935)
+  PASS  core.fact_gp_settlement_load: new-iss staff=19042 — (expect 19042)
+  PASS  core.fact_load_sale: new-iss [A] A=743 B=0 C=0 total=743 — (expect A=743 B=0 C=0 total=743)
+  PASS  core.fact_load_sale: new-iss staff=12940 — (expect 12940)
+  PASS  semantic.grower_dispatch_detail: new-iss=4290 == hub=4290
+  PASS  semantic.grower_dispatch_shipped: new-iss=31315 == hub=31315
+  PASS  semantic.grower_dispatch_load: new-iss=3274 == hub=3274
+  PASS  semantic.grower_load_sale: new-iss=1835 == hub=1835
+  PASS  semantic.grower_settlement: new-iss=189 == hub=189
+  PASS  semantic.grower_gp_settlement: new-iss=105 == hub=105
+  PASS  semantic.grower_gp_settlement_load: new-iss=6733 == hub=6733
+  PASS  new-iss view parity is non-trivial (rows > 0) — sum=47741
+  PASS  new-iss staff token sees the full directory (99) — (expect 99)
+  PASS  new-iss grower [A] token → 0 directory rows — got 0
+
+=== 233/233 checks passed ===

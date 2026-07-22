@@ -41,14 +41,24 @@ The applier separates two things that look alike:
   `mm-data-hub/portal_activation.ts` and deliberately leaves `updated_at` alone, because that
   column records when the STATE last changed. 21 such rows were re-stamped on the first apply.
 
-## ⚠ OPEN — the grower-portal admin RPC is still live
-`semantic.set_grower_portal_enabled()` (0059, admin-gated) still works, so a portal admin can still
-toggle activation. Nothing diverges silently — the next `portal:activate` run detects it as DRIFT
-and reverts it — but the portal UI is no longer the mechanism Tim wants, and two write paths to one
-table is a race waiting to happen. **Not revoked here: that breaks grower-portal's admin page and
-is a cross-repo change needing coordination.** Options when Tim decides: revoke EXECUTE (hard
-break), make the RPC raise a "managed in mm-data-hub" error (friendly break), or leave it with
-drift-revert as the guard.
+## ✅ CLOSED — the portal admin RPC is retired (0064, Tim: "go with the friendly break")
+`semantic.set_grower_portal_enabled()` keeps its EXACT signature (grower-portal is built against
+it; the call still resolves and PostgREST still routes it) but **no longer writes**. An admin caller
+gets **`0A000`** (feature_not_supported → HTTP 501) with a message, detail and hint pointing at
+`src/config/portal_activation.ts` and `npm run portal:activate`.
+
+**Authorization is still evaluated FIRST and is unchanged** — growers, staff-who-are-not-admin,
+no-claim, mm-hub-internal and wrong-issuer callers still get **42501** and never see the retirement
+notice, so an unauthorized caller learns nothing about the endpoint's state. Only a caller who
+*would* have been allowed to write is told the path is retired — precisely who needs the message.
+The retirement raise sits immediately after the gate, so argument validation is now unreachable:
+refused whatever the arguments. Kept SECURITY DEFINER with an empty search_path so the rls_posture
+**A7** pinned definer list needs no change and re-enabling is a one-line revert.
+
+**Cross-repo note drafted: `docs/grower-portal-activation-retirement.md`** — send it before/with
+deploy. It asks them to remove or disable the toggle (or surface the detail/hint text), not to
+retry the 501, and flags that activation gates the DIRECTORY DISPLAY ONLY — the Auth0 claim is
+still the real access control until the claim-side grower gate ships.
 
 ## Evidence
 `portal:activate` dry-run + `--apply` + idempotent re-run · `portal:verify` **43/43** ·
